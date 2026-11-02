@@ -22,6 +22,6 @@ push LANGFUSE_SECRET_KEY "${LANGFUSE_SECRET_KEY:-}"
 push LANGFUSE_BASE_URL "${LANGFUSE_BASE_URL:-}"
 push STUDIO_STATELESS "1"
 push TRACE_EXPORTER "memory+otlp"
-# dedicated-endpoint provisioning takes ~6 minutes: longer than a serverless request, so it stays off here
-push ALLOW_DEDICATED "0"
+# dedicated-endpoint provisioning holds a request for ~7.5 minutes: fits Vercel Pro (maxDuration 800), not Hobby (300)
+push ALLOW_DEDICATED "${VERCEL_ALLOW_DEDICATED:-0}"
 echo "done. Deploy with: npx vercel --prod"
