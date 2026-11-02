@@ -53,7 +53,9 @@ make studio          # http://127.0.0.1:8090  (reads .env: NEBIUS_API_KEY, DAYTO
 make studio-mock     # same UI against the mock + local sandbox, no keys
 ```
 
-![Nebius Integration Scout: a run against the mock, showing the sandbox probe, the conformance kit, a benchmark, the integration plan with code and README, and the trace](docs/img/studio-run.png)
+The four example scenarios target the newest models Token Factory serves (MiniMax-M3.1-Flash, Kimi-K2.7-Code, DeepSeek-V4.1-Flash, Kimi-K3) and compare them with the verified default, `Qwen/Qwen3-235B-A22B-Instruct-2507`, which is also the model the scout itself runs on. The "Model to evaluate" selector changes what is probed, benchmarked and checked, not the orchestrator.
+
+![Nebius Integration Scout: a live run against Token Factory, Daytona, Cartesia and Langfuse, showing the sandbox probe, the conformance kit, benchmarks, the integration plan with code and README, and the trace](docs/img/studio-live.png)
 
 The Studio ("Nebius Integration Scout") is the FDE motion as a product for a partner: describe the workload (type, framework, TTFT budget, volume) or pick an example, and the
 agent **proves** things rather than describing them:
@@ -61,12 +63,14 @@ agent **proves** things rather than describing them:
 | Step | What actually happens | Where |
 |---|---|---|
 | `run_probe` | writes a framework probe (PydanticAI, LangGraph or raw OpenAI SDK) into a **Daytona sandbox**, installs the framework, runs it against Token Factory, and reports whether the tool call *really* happened and with which arguments | `probes/`, `sandbox.py` |
-| `run_conformance` | the 12-check kit, each check streaming into the UI as PASS / PARTIAL / FAIL | `conformance/` |
+| `run_conformance` | the 13-check kit, each check streaming into the UI as PASS / PARTIAL / FAIL | `conformance/` |
 | `benchmark` | TTFT and tokens/s on the partner's own prompt, charted live | `tools.py` |
 | `web_search` | live grounding via Tavily when the ask needs facts | `tools.py` |
 | report | a typed `FdeReport`: verdict, model, findings with numbers, next steps; plus deliverables derived from what was verified, not from prose: a copy-paste integration snippet for the partner's framework, a downloadable `INTEGRATION.md`, the TTFT budget check, and a cost estimate when `pricing.json` has prices | `studio_agent.py`, `studio.py` |
 | voice | the report's 60-word `spoken_summary`, synthesised by **Cartesia Sonic** and played in the page (browser speech if no key) | `voice.py` |
-| trace | the OpenTelemetry spans for the run, as a tree | `tracing.py` |
+| trace | the OpenTelemetry spans for the run, as a tree, with an "open in Langfuse" link when keys are set | `tracing.py` |
+| Langfuse panel | the other direction of the observability partnership: the Studio reads recent traces, model-call counts and p95 run latency *back* from Langfuse's public API and shows them next to the run | `studio.py` `/api/langfuse/metrics` |
+| replay | any finished run can be exported (`/api/runs/{id}/export?save_as=name`) and replayed from `demo/runs/` with its original timing and audio, so the demo survives a dead Wi-Fi | `studio.py` |
 
 Everything streams over Server-Sent Events (`/api/runs/{id}/events`), so the panel can watch a
 sandbox install packages line by line. Without keys the Studio degrades honestly: the status pills
@@ -216,14 +220,36 @@ to a field-to-product ticket when it does not. Adding a framework later means re
 * It emits OpenTelemetry with the GenAI semantic conventions natively, so "industry-standard tracing" is a flag, not a plugin.
 * CrewAI and the OpenAI Agents SDK are next; the Agents SDK's default tracing goes to OpenAI's platform, which is its own partner conversation.
 
-## 8. Status
+## 8. Status — verified live on 2 Nov 2026
 
 | Verified against | tests | conformance | notes |
 |---|---|---|---|
-| mock Token Factory (`src/mock_server`) | 17/17 | 12/12 PASS | deterministic; runs in CI with no secrets; Studio driven end to end in headless Chromium |
-| Token Factory (`api.tokenfactory.nebius.com`) + Daytona + Cartesia | — | run `make live` | fill this table from `reports/*.json` before the panel; expect PARTIAL on `tools.parallel` and `cache.cached_tokens` for some models |
+| mock Token Factory (`src/mock_server`) | 18/18 | 13/13 PASS | deterministic; runs in CI with no secrets; Studio driven end to end in headless Chromium |
+| **Token Factory** `api.tokenfactory.nebius.com` · `Qwen/Qwen3-235B-A22B-Instruct-2507` | — | **13/13 PASS** | tools, parallel calls, forced choice, json_schema, streaming deltas, prefix cache 688/700 cached; `reports/Qwen_Qwen3-235B-A22B-Instruct-2507.json` |
+| Token Factory · `Qwen/Qwen3-30B-A3B-Instruct-2507` | — | 12/13 · 1 PARTIAL | 304 ms TTFT, 231 tok/s on the shared endpoint; prefix cache not observable in that run |
+| Token Factory · `deepseek-ai/DeepSeek-V4.1-Flash-1017` | — | 12/13 · 1 FAIL | `structured.json_schema` returns prose; 1,788 tok/s, 638 ms TTFT |
+| Token Factory · `moonshotai/Kimi-K2.7-Code` | — | 9/13 · 2 FAIL | empty `chat.basic` content, no streamed text deltas; 838 tok/s |
+| Token Factory · `moonshotai/Kimi-K3` | — | 8/13 · 4 FAIL | `chat.basic`, `tools.choice_required`, `tools.choice_named`, `structured.json_schema` |
+| Token Factory · `MiniMaxAI/MiniMax-M3.1-Flash` | — | probe ✔ | PydanticAI tool call verified; **3.2 s TTFT** on the shared endpoint (10× a voice budget) |
+| **Daytona** | — | ✔ | ephemeral `python:3.12-slim` sandboxes created, probe uploaded + executed, deleted; PydanticAI, LangGraph and OpenAI-SDK probes all reported `tool_called=true` |
+| **Cartesia** | — | ✔ | `sonic-3` speaks every verdict (≈2.7–3.7 s per 60 words) |
+| **Langfuse** (`us.cloud.langfuse.com`) | — | ✔ | every Studio run exported over OTLP; the Studio reads traces/latency/model-call counts back through `/api/public/v2/observations` |
+| **Tavily** | — | ✔ | live rate-limit / pricing lookups inside the migration scenario |
 
-Known gaps / next: a `tests/test_langgraph_through_framework.py` to prove the kit generalises; a Langfuse `docker-compose` for self-hosting on Nebius; cost per million tokens pulled from the pricing API into `benchmark_model`.
+Every row above came from the Studio driving the real services; the four scenario runs are saved under `demo/runs/` and can be replayed from the UI without any network.
+
+### Gotchas found live (and what the repo does about them)
+
+These are the kind of findings an FDE hands back to the platform team. Each one is now a check, a setting, or a documented workaround.
+
+1. **Streamed usage is cumulative.** Token Factory sends `usage` in *every* streamed chunk with running totals (vLLM `continuous_usage_stats` behaviour). PydanticAI adds per-chunk usage unless told otherwise, which inflated one run to 635k input tokens. Fix: `OpenAIChatModelSettings(openai_continuous_usage_stats=True)` in `provider.py`; the kit's `streaming.text` check now reports `usage cumulative in N chunks`.
+2. **Parallel tool-call deltas can land on the wrong index.** With five tool calls in one streamed turn, the tail of call N's JSON arguments arrived on call N+1 (`…"max_tokens": 16` / `0}{"query": …`), so both calls failed validation. New check `streaming.parallel_tool_call_deltas`; the Studio's orchestrator runs its own model requests non-streamed (`agent.iter`) and keeps streaming on the partner-facing legs.
+3. **Several new models are not agent-ready yet.** Kimi-K3 and Kimi-K2.7-Code return empty `content` on plain chat and ignore `tool_choice`; DeepSeek-V4.1-Flash ignores `json_schema`. The kit makes this a table instead of a support ticket.
+4. **Cartesia SDK 4.x** returns a coroutine from `tts.bytes()`; `voice.py` accepts bytes, iterators or awaitables.
+
+### Daytona next to Nebius Sandboxes
+
+Token Factory now has its own Sandboxes (beta): one *operation* per run, fresh compute from an image, optional filesystem snapshot. Daytona stays the partner pick here because a coding agent wants what the beta does not offer yet: long-lived sandboxes with `fs.upload_file` / `process.exec` round-trips, git and LSP inside the box, preview URLs and snapshots. The sandbox interface in `sandbox.py` is one class per backend, so a Nebius Sandboxes backend is a 40-line addition when the API leaves beta.
 
 ## 9. Repo map
 

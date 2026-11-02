@@ -1,0 +1,147 @@
+{
+  "endpoint": "https://api.tokenfactory.nebius.com/v1/",
+  "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "ran_at": "2026-11-02T08:00:36.674225+00:00",
+  "python": "3.11.3",
+  "platform": "macOS-26.0.1-arm64-arm-64bit",
+  "summary": {
+    "pass": 13,
+    "partial": 0,
+    "fail": 0,
+    "total": 13
+  },
+  "results": [
+    {
+      "name": "chat.basic",
+      "status": "PASS",
+      "detail": "content='ready'",
+      "evidence": {
+        "usage": {
+          "completion_tokens": 2,
+          "prompt_tokens": 15,
+          "total_tokens": 17,
+          "completion_tokens_details": null,
+          "prompt_tokens_details": null
+        },
+        "finish_reason": "stop"
+      },
+      "ms": 809.3
+    },
+    {
+      "name": "usage.reported",
+      "status": "PASS",
+      "detail": "prompt=10 completion=10",
+      "evidence": {},
+      "ms": 366.2
+    },
+    {
+      "name": "tools.call_emitted",
+      "status": "PASS",
+      "detail": "get_weather({'city': 'Amsterdam'})",
+      "evidence": {
+        "finish_reason": "tool_calls",
+        "id": "chatcmpl-tool-8a2cb38de86d2b88"
+      },
+      "ms": 567.5
+    },
+    {
+      "name": "tools.result_roundtrip",
+      "status": "PASS",
+      "detail": "final='The weather in Amsterdam is currently 11\u00b0C with an overcast sky.'",
+      "evidence": {},
+      "ms": 989.7
+    },
+    {
+      "name": "tools.parallel",
+      "status": "PASS",
+      "detail": "2 calls in one turn: ['get_time', 'get_weather']",
+      "evidence": {},
+      "ms": 664.6
+    },
+    {
+      "name": "tools.choice_required",
+      "status": "PASS",
+      "detail": "1 call(s) with tool_choice=required",
+      "evidence": {},
+      "ms": 562.5
+    },
+    {
+      "name": "tools.choice_named",
+      "status": "PASS",
+      "detail": "called ['get_time']",
+      "evidence": {},
+      "ms": 447.1
+    },
+    {
+      "name": "structured.json_schema",
+      "status": "PASS",
+      "detail": "keys=['model', 'reasons', 'score']",
+      "evidence": {
+        "object": {
+          "model": "DeepSeek Coder",
+          "score": 8,
+          "reasons": [
+            "Strong performance on code generation and completion tasks",
+            "Available in multiple sizes (1B to 33B parameters), making it accessible for various hardware setups",
+            "Trained on a large corpus of code from GitHub, supporting over 80 programming languages",
+            "Permissively licensed (Apache 2.0), allowing commercial use and modification",
+            "Lacks some of the tool-integration and multi-step reasoning capabilities of more advanced proprietary agents like GitHub Copilot or Claude",
+            "Slight lag in natural language understanding compared to general-purpose models"
+          ]
+        }
+      },
+      "ms": 1627.0
+    },
+    {
+      "name": "structured.json_object",
+      "status": "PASS",
+      "detail": "keys=['answer', 'ok']",
+      "evidence": {},
+      "ms": 481.9
+    },
+    {
+      "name": "streaming.text",
+      "status": "PASS",
+      "detail": "14 content chunks, finish=stop, ttft=679.1ms, usage cumulative in 16 chunks",
+      "evidence": {
+        "usage": {
+          "completion_tokens": 41,
+          "prompt_tokens": 16,
+          "total_tokens": 57,
+          "completion_tokens_details": null,
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 16,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        },
+        "usage_chunks": 16,
+        "usage_cumulative": true
+      },
+      "ms": 978.1
+    },
+    {
+      "name": "streaming.tool_call_deltas",
+      "status": "PASS",
+      "detail": "get_weather({'city': 'Amsterdam'}) finish=tool_calls",
+      "evidence": {},
+      "ms": 484.8
+    },
+    {
+      "name": "streaming.parallel_tool_call_deltas",
+      "status": "PASS",
+      "detail": "2 parallel calls, all argument streams valid JSON: ['get_weather', 'get_time']",
+      "evidence": {},
+      "ms": 627.7
+    },
+    {
+      "name": "cache.cached_tokens",
+      "status": "PASS",
+      "detail": "second call cached_tokens=688 of prompt_tokens=700 (first=688)",
+      "evidence": {},
+      "ms": 878.2
+    }
+  ]
+}

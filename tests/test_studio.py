@@ -20,6 +20,7 @@ async def studio(settings, monkeypatch, tmp_path):
     monkeypatch.setenv("CARTESIA_API_KEY", "")
     monkeypatch.setenv("TRACE_EXPORTER", "memory")
     monkeypatch.setenv("STUDIO_AUDIO_DIR", str(tmp_path / "audio"))
+    monkeypatch.setenv("STUDIO_REPLAY_DIR", str(tmp_path / "replays"))
     config.get_settings.cache_clear()
     import importlib
 
@@ -65,7 +66,7 @@ async def test_full_run_streams_events_and_verifies_integration(studio):
     assert "tool_call" in kinds and "tool_result" in kinds
     sandbox_done = [e for e in payloads["sandbox"] if e["status"] == "done"]
     assert sandbox_done and sandbox_done[0]["tool_called"] is True, "the probe must prove the tool call inside the sandbox"
-    assert any(e["status"] == "done" and e["passed"] == 12 for e in payloads["conformance"])
+    assert any(e["status"] == "done" and e["passed"] == 13 for e in payloads["conformance"])
     assert any(e["status"] == "done" and e["ttft_ms"] > 0 for e in payloads["benchmark"])
     report = payloads["report"][0]["report"]
     assert report["integration_verified"] is True and report["spoken_summary"]
@@ -78,3 +79,25 @@ async def test_full_run_streams_events_and_verifies_integration(studio):
     assert payloads["trace"][0]["count"] >= 3
     final = (await studio.get(f"/api/runs/{run_id}")).json()
     assert final["status"] == "done" and final["report"]["recommended_model"]
+
+
+async def test_export_and_replay_round_trip(studio):
+    run_id = (await studio.post("/api/runs", json={"scenario": "model-readiness"})).json()["run_id"]
+    async with studio.stream("GET", f"/api/runs/{run_id}/events") as r:
+        async for line in r.aiter_lines():
+            if line.startswith("event: run_end"):
+                break
+    doc = (await studio.get(f"/api/runs/{run_id}/export", params={"save_as": "readiness"})).json()
+    assert doc["saved"].endswith("readiness.json") and doc["report"] and len(doc["events"]) > 5
+    assert any(x["name"] == "readiness" for x in (await studio.get("/api/runs")).json()["replays"])
+
+    replay_id = (await studio.post("/api/runs", json={"replay": "readiness"})).json()["run_id"]
+    kinds = []
+    async with studio.stream("GET", f"/api/runs/{replay_id}/events") as r:
+        async for line in r.aiter_lines():
+            if line.startswith("event: "):
+                kinds.append(line[7:])
+            if line.startswith("event: run_end"):
+                break
+    assert kinds[0] == "run_start" and "report" in kinds and kinds[-1] == "run_end"
+    assert (await studio.get(f"/api/runs/{replay_id}")).json()["report"]["title"] == doc["report"]["title"]

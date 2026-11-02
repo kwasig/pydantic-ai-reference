@@ -21,7 +21,7 @@ from pydantic_ai import Agent, InstrumentationSettings, NativeOutput, PromptedOu
 from pydantic_ai.capabilities import Instrumentation
 
 from .config import Settings, get_settings
-from .provider import make_client, make_model
+from .provider import make_client, make_model, token_factory_model_settings
 from .tools import ALL_TOOLS, BenchmarkResult, Deps
 from .tracing import configure_tracing
 
@@ -98,5 +98,6 @@ def build_agent(
         instructions=INSTRUCTIONS,
         tools=ALL_TOOLS,
         retries=2,
+        model_settings=token_factory_model_settings(),
         capabilities=capabilities,
     )

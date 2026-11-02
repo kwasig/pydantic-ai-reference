@@ -17,14 +17,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import time
 import uuid
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
@@ -32,7 +35,7 @@ from pydantic import BaseModel
 from .config import Settings, get_settings
 from .provider import make_client
 from .studio_agent import SCENARIOS, build_studio_agent, build_studio_deps, integration_snippet
-from .tracing import memory_spans
+from .tracing import langfuse_configured, langfuse_host, langfuse_trace_url, memory_spans
 from .voice import synthesize
 
 STATIC = Path(__file__).parent / "static"
@@ -54,6 +57,7 @@ class StartRun(BaseModel):
     scenario: str | None = None
     model: str | None = None
     intake: Intake | None = None
+    replay: str | None = None  # name of a saved run under demo/runs to replay instead of executing
 
 
 @dataclass
@@ -71,6 +75,8 @@ class Run:
     error: str | None = None
     audio: dict[str, Any] | None = None
     spans: list[dict[str, Any]] = field(default_factory=list)
+    trace_id: str | None = None
+    langfuse: dict[str, Any] | None = None
 
     def emit(self, kind: str, data: dict[str, Any] | None = None) -> None:
         ev = {"seq": len(self.events), "t": round(time.time() - self.started, 3), "kind": kind, **(data or {})}
@@ -79,6 +85,45 @@ class Run:
 
 
 RUNS: dict[str, Run] = {}
+REPLAY_DIR = Path(os.getenv("STUDIO_REPLAY_DIR", "demo/runs"))
+
+
+def list_replays() -> list[dict[str, Any]]:
+    out = []
+    for p in sorted(REPLAY_DIR.glob("*.json")):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            out.append(
+                {
+                    "name": p.stem,
+                    "title": d.get("title") or p.stem,
+                    "model": d.get("model"),
+                    "recorded_at": d.get("recorded_at"),
+                    "events": len(d.get("events", [])),
+                }
+            )
+        except Exception:  # noqa: BLE001, S112 - a corrupt saved run just does not appear in the list
+            continue
+    return out
+
+
+async def _replay(run: Run, name: str, speed: float = 2.0, max_gap: float = 1.5) -> None:
+    """Re-emit a saved run's events with (compressed) original timing. Used for demos without network."""
+    p = REPLAY_DIR / f"{Path(name).stem}.json"
+    d = json.loads(p.read_text(encoding="utf-8"))
+    run.report, run.usage, run.audio, run.spans = d.get("report"), d.get("usage"), d.get("audio"), d.get("spans") or []
+    last = 0.0
+    for ev in d["events"]:
+        gap = min(max(0.0, float(ev.get("t", 0)) - last) / speed, max_gap)
+        last = float(ev.get("t", 0))
+        if gap:
+            await asyncio.sleep(gap)
+        data = {k: v for k, v in ev.items() if k not in ("seq", "t")}
+        kind = data.pop("kind")
+        if kind == "run_start":
+            data["replay"] = name
+        run.emit(kind, data)
+    run.status = "done"
 
 
 def _span_dict(span) -> dict[str, Any]:
@@ -92,6 +137,7 @@ def _span_dict(span) -> dict[str, Any]:
     }
     return {
         "name": span.name,
+        "trace_id": f"{ctx.trace_id:032x}",
         "span_id": f"{ctx.span_id:016x}",
         "parent_span_id": f"{parent:016x}" if parent else None,
         "start_ns": span.start_time,
@@ -101,30 +147,56 @@ def _span_dict(span) -> dict[str, Any]:
 
 
 async def _execute(run: Run, settings: Settings) -> None:
-    agent = build_studio_agent(settings, run.model, instrument=True, trace_exporter="memory")
-    deps = build_studio_deps(settings, emit=run.emit)
+    # The scout itself runs on the verified default model; `run.model` is the model under evaluation.
+    try:
+        exporter = "memory+otlp" if langfuse_configured() else "memory"
+        agent = build_studio_agent(settings, settings.model, instrument=True, trace_exporter=exporter)
+        deps = build_studio_deps(settings, emit=run.emit, eval_model=run.model)
+    except Exception as e:  # noqa: BLE001 - setup failures must still end the stream
+        run.status, run.error = "error", f"{type(e).__name__}: {str(e)[:500]}"
+        run.emit("error", {"message": run.error})
+        run.emit("run_end", {"status": run.status, "elapsed_s": 0})
+        return
     run.emit(
         "run_start",
         {"prompt": run.prompt, "model": run.model, "endpoint": settings.base_url, "sandbox": deps.sandbox.name, "mock": settings.is_mock},
     )
     try:
-        async with agent.run_stream_events(run.prompt, deps=deps) as events:
-            async for ev in events:
-                k = ev.event_kind
-                if k == "function_tool_call":
-                    run.emit("tool_call", {"tool": ev.part.tool_name, "args": _safe_json(ev.part.args), "call_id": ev.part.tool_call_id})
-                elif k == "function_tool_result":
-                    run.emit(
-                        "tool_result",
-                        {"tool": ev.part.tool_name, "call_id": ev.part.tool_call_id, "result": _trim(_safe_json(ev.part.content))},
-                    )
-                elif k == "part_start" and type(ev.part).__name__ == "TextPart" and getattr(ev.part, "content", ""):
-                    run.emit("text", {"delta": ev.part.content})
-                elif k == "part_delta" and type(ev.delta).__name__ == "TextPartDelta":
-                    run.emit("text", {"delta": ev.delta.content_delta})
-                elif k == "final_result":
-                    run.emit("final_result_started", {"tool": ev.tool_name})
-            result = events.result
+        # The orchestrator deliberately does NOT stream its own model responses: Token Factory's streamed
+        # tool-call deltas can land on the wrong tool-call index when the model emits several calls at
+        # once (see the kit's streaming.parallel_tool_call_deltas check). Non-streamed requests are
+        # unaffected; the partner-facing legs (benchmarks, probes) still stream.
+        from pydantic_ai import Agent as _Agent
+        from pydantic_ai.usage import UsageLimits
+
+        async with agent.iter(run.prompt, deps=deps, usage_limits=UsageLimits(request_limit=14)) as agent_run:
+            async for node in agent_run:
+                if _Agent.is_model_request_node(node):
+                    continue  # executed by the iterator, without streaming
+                if _Agent.is_call_tools_node(node):
+                    for part in node.model_response.parts:
+                        if type(part).__name__ == "TextPart" and getattr(part, "content", ""):
+                            run.emit("text", {"delta": part.content})
+                    async with node.stream(agent_run.ctx) as tool_events:
+                        async for ev in tool_events:
+                            k = ev.event_kind
+                            if k == "function_tool_call":
+                                run.emit(
+                                    "tool_call",
+                                    {"tool": ev.part.tool_name, "args": _safe_json(ev.part.args), "call_id": ev.part.tool_call_id},
+                                )
+                            elif k == "function_tool_result":
+                                run.emit(
+                                    "tool_result",
+                                    {
+                                        "tool": ev.part.tool_name,
+                                        "call_id": ev.part.tool_call_id,
+                                        "result": _trim(_safe_json(ev.part.content)),
+                                    },
+                                )
+                            elif k == "final_result":
+                                run.emit("final_result_started", {"tool": ev.tool_name})
+            result = agent_run.result
         report = result.output.model_dump()
         u = result.usage
         run.report = report
@@ -173,7 +245,15 @@ async def _execute(run: Run, settings: Settings) -> None:
             ]
         except Exception:  # noqa: BLE001
             run.spans = []
-        run.emit("trace", {"spans": run.spans, "count": len(run.spans)})
+        root = next((sp for sp in run.spans if not sp.get("parent_span_id")), None)
+        run.trace_id = root["trace_id"] if root else None
+        project = getattr(app.state, "langfuse_project", None)
+        url = None
+        if run.trace_id and langfuse_configured():
+            url = f"{langfuse_host()}/project/{project}/traces/{run.trace_id}" if project else langfuse_trace_url(run.trace_id)
+        lf = {"exported": langfuse_configured(), "host": langfuse_host() if langfuse_configured() else None, "url": url}
+        run.langfuse = lf
+        run.emit("trace", {"spans": run.spans, "count": len(run.spans), "trace_id": run.trace_id, "langfuse": lf})
         run.emit("run_end", {"status": run.status, "elapsed_s": round(time.time() - run.started, 2)})
         await deps.http.aclose()
 
@@ -216,7 +296,7 @@ def _cost_estimate(model: str, monthly_tokens_m: float | None) -> dict[str, Any]
     }
 
 
-def _partner_readme(run: "Run", r: dict[str, Any], s: Settings) -> str:
+def _partner_readme(run: Run, r: dict[str, Any], s: Settings) -> str:
     probes = (
         "\n".join(
             f"- {p['framework']} on {p['backend']}: {'tool call verified' if p['tool_called'] else 'NOT verified'} — {p['summary']}"
@@ -245,7 +325,7 @@ def _partner_readme(run: "Run", r: dict[str, Any], s: Settings) -> str:
     )
     return f"""# {r["title"]}
 
-Generated by Nebius Integration Scout · {datetime.now(timezone.utc).strftime("%Y-%m-%d")} · endpoint {s.base_url}
+Generated by Nebius Integration Scout · {datetime.now(UTC).strftime("%Y-%m-%d")} · endpoint {s.base_url}
 
 **Verdict:** {"integration verified" if r["integration_verified"] else "not verified"} · recommended model `{r["recommended_model"]}` · workload {r["workload"]} · {budget}
 
@@ -343,11 +423,86 @@ async def status() -> dict[str, Any]:
         "daytona": {"configured": bool(s.daytona_api_key), "fallback_local": s.allow_local_exec},
         "cartesia": {"configured": bool(os.getenv("CARTESIA_API_KEY"))},
         "tavily": {"configured": bool(s.tavily_api_key)},
-        "langfuse": {
-            "configured": bool(os.getenv("LANGFUSE_PUBLIC_KEY")),
-            "host": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-        },
+        "langfuse": {"configured": langfuse_configured(), "host": langfuse_host()},
         "trace_exporter": s.trace_exporter,
+    }
+
+
+@app.get("/api/langfuse/metrics")
+async def langfuse_metrics(hours: int = 72, limit: int = 100) -> dict[str, Any]:
+    """Read back what Langfuse holds for this service: recent traces, per-trace latency, model calls.
+    This is the other half of the integration: spans go out over OTLP, numbers come back over the
+    public API (v2 observations, grouped by trace here)."""
+    if not langfuse_configured():
+        return {"configured": False}
+    auth = (os.environ["LANGFUSE_PUBLIC_KEY"].strip('"'), os.environ["LANGFUSE_SECRET_KEY"].strip('"'))
+    since = (datetime.now(tz=UTC) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    async with httpx.AsyncClient(base_url=langfuse_host(), auth=auth, timeout=20) as c:
+        r = await c.get("/api/public/v2/observations", params={"fromStartTime": since, "limit": limit})
+        if r.status_code != 200:
+            return {"configured": True, "host": langfuse_host(), "error": f"{r.status_code}: {r.text[:160]}"}
+        obs = r.json().get("data", [])
+    project = next((o.get("projectId") for o in obs if o.get("projectId")), None)
+    if project:
+        app.state.langfuse_project = project
+    by_trace: dict[str, dict[str, Any]] = {}
+    for o in obs:
+        t = by_trace.setdefault(
+            o["traceId"],
+            {
+                "id": o["traceId"],
+                "start": o["startTime"],
+                "end": o.get("endTime") or o["startTime"],
+                "generations": 0,
+                "models": set(),
+                "gen_latency_s": 0.0,
+                "name": None,
+            },
+        )
+        t["start"] = min(t["start"], o["startTime"])
+        t["end"] = max(t["end"], o.get("endTime") or o["startTime"])
+        if o.get("isRootObservation"):
+            t["name"] = o.get("name")
+        if o.get("type") == "GENERATION":
+            t["generations"] += 1
+            t["gen_latency_s"] += float(o.get("latency") or 0)
+            if (o.get("name") or "").startswith("chat "):
+                t["models"].add(o["name"][5:])
+    traces = []
+    for t in sorted(by_trace.values(), key=lambda x: x["start"], reverse=True):
+        if not t["generations"]:  # HTTP/SDK spans without a model call are not agent runs
+            continue
+        try:
+            lat = (
+                datetime.fromisoformat(t["end"].replace("Z", "+00:00")) - datetime.fromisoformat(t["start"].replace("Z", "+00:00"))
+            ).total_seconds()
+        except ValueError:
+            lat = None
+        traces.append(
+            {
+                "id": t["id"],
+                "name": t["name"] or "nebius-fde-studio",
+                "start": t["start"],
+                "latency_s": round(lat, 2) if lat is not None else None,
+                "generations": t["generations"],
+                "gen_latency_s": round(t["gen_latency_s"], 2),
+                "models": sorted(t["models"]),
+                "url": f"{langfuse_host()}/project/{project}/traces/{t['id']}" if project else langfuse_trace_url(t["id"]),
+            }
+        )
+    lat = sorted(x["latency_s"] for x in traces if x["latency_s"] is not None)
+    gens = sum(x["generations"] for x in traces)
+    return {
+        "configured": True,
+        "host": langfuse_host(),
+        "project": project,
+        "hours": hours,
+        "observations": len(obs),
+        "count": len(traces),
+        "model_calls": gens,
+        "avg_latency_s": round(sum(lat) / len(lat), 2) if lat else None,
+        "p95_latency_s": lat[max(0, int(len(lat) * 0.95) - 1)] if lat else None,
+        "traces": traces[:12],
     }
 
 
@@ -369,6 +524,13 @@ async def models() -> dict[str, Any]:
 @app.post("/api/runs")
 async def start_run(req: StartRun) -> dict[str, str]:
     s: Settings = app.state.settings
+    if req.replay:
+        if not (REPLAY_DIR / f"{Path(req.replay).stem}.json").exists():
+            raise HTTPException(404, "no such saved run")
+        run = Run(id=uuid.uuid4().hex[:10], prompt="(replay)", model=req.model or s.model, intake={"replay": req.replay})
+        RUNS[run.id] = run
+        asyncio.create_task(_replay(run, req.replay))
+        return {"run_id": run.id}
     prompt = req.prompt
     if req.scenario:
         sc = next((x for x in SCENARIOS if x["id"] == req.scenario), None)
@@ -386,6 +548,48 @@ async def start_run(req: StartRun) -> dict[str, str]:
     RUNS[run.id] = run
     asyncio.create_task(_execute(run, s))
     return {"run_id": run.id}
+
+
+@app.get("/api/runs")
+async def list_runs() -> dict[str, Any]:
+    return {
+        "runs": [
+            {"id": r.id, "status": r.status, "model": r.model, "started": r.started, "title": (r.report or {}).get("title")}
+            for r in RUNS.values()
+        ],
+        "replays": list_replays(),
+    }
+
+
+@app.get("/api/runs/{run_id}/export")
+async def export_run(run_id: str, save_as: str | None = None) -> dict[str, Any]:
+    """Everything needed to replay this run later: events, report, usage, spans, and the audio file name.
+    With ?save_as=<name> it is also written to demo/runs/<name>.json (audio copied alongside)."""
+    run = RUNS.get(run_id)
+    if not run:
+        raise HTTPException(404, "no such run")
+    doc = {
+        "title": (run.report or {}).get("title"),
+        "model": run.model,
+        "prompt": run.prompt,
+        "intake": run.intake,
+        "recorded_at": datetime.fromtimestamp(run.started, tz=UTC).isoformat(),
+        "events": run.events,
+        "report": run.report,
+        "usage": run.usage,
+        "audio": run.audio,
+        "spans": run.spans,
+    }
+    if save_as:
+        REPLAY_DIR.mkdir(parents=True, exist_ok=True)
+        name = Path(save_as).stem
+        (REPLAY_DIR / f"{name}.json").write_text(json.dumps(doc, default=str, indent=1), encoding="utf-8")
+        audio_url = (run.audio or {}).get("url") or ""
+        audio_path = AUDIO_DIR / Path(audio_url).name if audio_url else None
+        if audio_path and audio_path.exists():
+            shutil.copy(audio_path, REPLAY_DIR / audio_path.name)
+        doc["saved"] = str(REPLAY_DIR / f"{name}.json")
+    return doc
 
 
 @app.get("/api/runs/{run_id}")
@@ -425,7 +629,7 @@ async def run_events(run_id: str, since: int = 0) -> StreamingResponse:
                     return
             try:
                 await asyncio.wait_for(run.queue.get(), timeout=15)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield b": keepalive\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -434,6 +638,8 @@ async def run_events(run_id: str, since: int = 0) -> StreamingResponse:
 @app.get("/audio/{name}")
 async def audio(name: str) -> FileResponse:
     p = AUDIO_DIR / Path(name).name
+    if not p.exists():
+        p = REPLAY_DIR / Path(name).name
     if not p.exists():
         raise HTTPException(404)
     return FileResponse(p, media_type="audio/mpeg")

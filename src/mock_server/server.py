@@ -171,7 +171,7 @@ def _pick_tools(tools: list[dict[str, Any]], prompt: str, tool_choice: Any) -> l
     low = prompt.lower()
     wanted = _ordered_wanted(plain, prompt)
     chosen = wanted[:1] or plain[:1]
-    if "parallel" in low and len(plain) >= 2:
+    if ("parallel" in low or "in one turn" in low or " and get_" in low) and len(plain) >= 2:
         chosen = plain[:2]
     return chosen
 

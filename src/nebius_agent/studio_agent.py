@@ -9,22 +9,19 @@ returns a typed report whose `spoken_summary` the Studio says out loud through C
 
 from __future__ import annotations
 
-import asyncio
-import json
-import os
-import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import httpx
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, InstrumentationSettings, RunContext, ToolOutput
+from pydantic_ai import Agent, InstrumentationSettings, ModelRetry, RunContext, ToolOutput
 from pydantic_ai.capabilities import Instrumentation
 
 from .config import Settings, get_settings
 from .probes import PROBES, parse_probe_result
-from .provider import make_client, make_model
+from .provider import make_client, make_model, token_factory_model_settings
 from .sandbox import Sandbox, get_sandbox
 from .tools import BenchmarkResult, Deps, benchmark_model, list_models, web_search
 from .tracing import configure_tracing
@@ -38,6 +35,7 @@ class StudioDeps(Deps):
 
     sandbox: Sandbox = field(default=None)  # type: ignore[assignment]
     emit: LogFn = field(default=lambda kind, data: None)
+    eval_model: str | None = None  # the model the partner asked about; tools default to it
 
 
 # ----------------------------------------------------------------------------- output
@@ -78,17 +76,21 @@ You are a Nebius forward-deployed engineer. A partner has asked for something; y
 things on Token Factory, not assume them, and hand back a report a partner could act on.
 
 Tools, and when to use them:
-- list_models: see what Token Factory serves (filter by family if the partner named one).
+- list_models: see what Token Factory serves (filter by family if the partner named one). Only use
+  model ids that appear in its output; if a requested model is missing, say so and use the nearest.
 - run_probe: run a real framework probe in a sandbox against Token Factory. This is the only way to
   claim an integration works. Use it whenever the ask mentions a framework, an integration, or
   "does X work". Prefer pydantic_ai unless the partner names another.
-- run_conformance: the 12-check endpoint/model kit. Use it when the ask is about readiness, a new
-  model, or when a probe fails (it tells you whether the model or the framework is at fault).
+- run_conformance: the 13-check endpoint/model kit (tools, parallel calls, forced choice, json_schema,
+  streaming deltas, prefix cache). ALWAYS run it once on the model you recommend: the partner's
+  README needs the check table, and it tells you whether the model or the framework is at fault.
 - benchmark_model: TTFT and tokens/s on the partner's own prompt. Use for model choice, voice,
   coding agents, or any latency question. Benchmark two candidates when choosing.
 - web_search: live facts from the web via Tavily, only when the ask needs them.
 
 Rules:
+- A complete run calls run_probe, run_conformance and benchmark (two candidates when choosing a
+  model). Skip one only if the partner's ask makes it meaningless, and say so in findings.
 - Be concrete. Every finding carries a number or a named check.
 - integration_verified is true only if a probe reported tool_called=true.
 - If the sandbox is disabled, say so in findings and keep going with what you can measure.
@@ -98,6 +100,22 @@ Rules:
 
 
 # ----------------------------------------------------------------------------- tools
+async def _served_model(ctx: RunContext[StudioDeps], model: str | None) -> str:
+    """Resolve a model id against what Token Factory serves; ask the agent to retry with a real id otherwise."""
+    model = (model or ctx.deps.eval_model or ctx.deps.settings.model).strip()
+    if model in ("configured_model", "configured model", "default", "default_model"):
+        return ctx.deps.settings.model
+    try:
+        page = await ctx.deps.client.models.list()
+        served = [m.id for m in page.data]
+    except Exception:  # noqa: BLE001 - if the list fails, let the call itself decide
+        return model
+    if served and model not in served:
+        near = [m for m in served if model.split("/")[-1].lower()[:8] in m.lower()][:5]
+        raise ModelRetry(f"model {model!r} is not served on Token Factory. Use an id from list_models, e.g. {near or served[:5]}.")
+    return model
+
+
 async def run_probe(
     ctx: RunContext[StudioDeps],
     framework: Literal["pydantic_ai", "openai_sdk", "langgraph"] = "pydantic_ai",
@@ -111,7 +129,7 @@ async def run_probe(
     """
     probe = PROBES[framework]
     s = ctx.deps.settings
-    model = model or s.model
+    model = await _served_model(ctx, model)
     emit = ctx.deps.emit
     sandbox = ctx.deps.sandbox
     emit("sandbox", {"status": "start", "backend": sandbox.name, "framework": probe.framework, "model": model, "files": [probe.file]})
@@ -158,7 +176,7 @@ async def run_probe(
 
 
 async def run_conformance(ctx: RunContext[StudioDeps], model: str | None = None) -> dict[str, Any]:
-    """Run the 12-check conformance kit against Token Factory for one model: tools, structured output, streaming, prefix cache.
+    """Run the 13-check conformance kit against Token Factory for one model: tools, structured output, streaming, prefix cache.
 
     Args:
         model: Token Factory model id; defaults to the configured model.
@@ -166,7 +184,7 @@ async def run_conformance(ctx: RunContext[StudioDeps], model: str | None = None)
     from conformance.checks import ALL_CHECKS
 
     s = ctx.deps.settings
-    model = model or s.model
+    model = await _served_model(ctx, model)
     emit = ctx.deps.emit
     client: AsyncOpenAI = ctx.deps.client
     results = []
@@ -203,8 +221,17 @@ async def benchmark(
         runs: repeated runs (the second run shows whether the prefix cache hit).
         max_tokens: cap on generated tokens per run.
     """
+    model = await _served_model(ctx, model)
     ctx.deps.emit("benchmark", {"status": "start", "model": model, "runs": runs})
-    r = await benchmark_model(ctx, model, prompt, runs, max_tokens)  # type: ignore[arg-type]
+    try:
+        r = await benchmark_model(ctx, model, prompt, runs, max_tokens)  # type: ignore[arg-type]
+    except ModelRetry:
+        raise
+    except Exception as e:
+        ctx.deps.emit("benchmark", {"status": "error", "model": model, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+        raise ModelRetry(
+            f"benchmark of {model} failed: {type(e).__name__}: {str(e)[:200]}. Choose another served model or report it as a finding."
+        ) from e
     ctx.deps.emit("benchmark", {"status": "done", **r.model_dump()})
     return r
 
@@ -213,9 +240,16 @@ STUDIO_TOOLS = [list_models, run_probe, run_conformance, benchmark, web_search]
 
 
 # ----------------------------------------------------------------------------- agent
-def build_studio_deps(settings: Settings | None = None, emit: LogFn | None = None) -> StudioDeps:
+def build_studio_deps(settings: Settings | None = None, emit: LogFn | None = None, eval_model: str | None = None) -> StudioDeps:
     s = settings or get_settings()
-    return StudioDeps(settings=s, client=make_client(s), http=httpx.AsyncClient(), sandbox=get_sandbox(s), emit=emit or (lambda k, d: None))
+    return StudioDeps(
+        settings=s,
+        client=make_client(s),
+        http=httpx.AsyncClient(),
+        sandbox=get_sandbox(s),
+        emit=emit or (lambda k, d: None),
+        eval_model=eval_model,
+    )
 
 
 def build_studio_agent(
@@ -231,9 +265,11 @@ def build_studio_agent(
         name="nebius-fde-studio",
         deps_type=StudioDeps,
         output_type=ToolOutput(FdeReport, name="final_result"),
-        instructions=INSTRUCTIONS,
+        instructions=INSTRUCTIONS
+        + f"\n\nThe configured default model is {s.model}; when a request says 'the configured model' pass that id.",
         tools=STUDIO_TOOLS,
         retries=2,
+        model_settings=token_factory_model_settings(),
         capabilities=caps,
     )
 
@@ -241,38 +277,42 @@ def build_studio_agent(
 SCENARIOS: list[dict[str, str]] = [
     {
         "id": "voice-cartesia",
+        "model": "MiniMaxAI/MiniMax-M3.1-Flash",
         "title": "Voice agent · Cartesia + Token Factory",
         "workload": "voice",
         "framework": "pydantic_ai",
         "budget_ms": "300",
-        "prompt": "We are building a real-time voice agent for customer support with Cartesia for speech and Token Factory for the LLM leg. The LLM must answer inside a 300 ms time-to-first-token budget. Prove tool calling works through PydanticAI with a real probe in the sandbox, list the served models, benchmark two plausible candidates on a short customer-service reply, and recommend one. Say plainly if none meets the budget on the shared endpoint and what a dedicated endpoint would change.",
+        "prompt": "We are building a real-time voice agent for customer support with Cartesia for speech and Token Factory for the LLM leg. The LLM must answer inside a 300 ms time-to-first-token budget. Prove tool calling works through PydanticAI with a real probe in the sandbox, list the served models, benchmark two fast candidates on a short customer-service reply (MiniMaxAI/MiniMax-M3.1-Flash and Qwen/Qwen3-30B-A3B-Instruct-2507 if served, else the two smallest instruct models), and recommend one. Say plainly if none meets the budget on the shared endpoint and what a dedicated endpoint would change.",
         "blurb": "Latency budget, two benchmarks, a verified integration, a spoken verdict.",
     },
     {
         "id": "coding-daytona",
+        "model": "moonshotai/Kimi-K2.7-Code",
         "title": "Coding agent · Daytona sandboxes",
         "workload": "coding-agent",
         "framework": "langgraph",
         "budget_ms": "",
-        "prompt": "We run a coding agent that executes in Daytona sandboxes and makes dozens of sequential model calls per task, so tokens per second is what we feel. Run the langgraph probe and the pydantic_ai probe in the sandbox against the configured model, run the conformance kit, benchmark the model on a code-edit prompt, and tell us which framework to start with and what throughput to expect.",
+        "prompt": "We run a coding agent that executes in Daytona sandboxes and makes dozens of sequential model calls per task, so tokens per second is what we feel. Run the langgraph probe and the pydantic_ai probe in the sandbox against moonshotai/Kimi-K2.7-Code (fall back to the configured model if it is not served), run the conformance kit on it, benchmark it and MiniMaxAI/MiniMax-M3.1-Flash on a code-edit prompt, and tell us which framework to start with and what throughput to expect.",
         "blurb": "Two real probes in a sandbox, throughput measured, one recommendation.",
     },
     {
         "id": "migrate-support-bot",
+        "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         "title": "Migrate a support bot from a closed API",
         "workload": "chat",
         "framework": "openai_sdk",
         "budget_ms": "1000",
-        "prompt": "We are moving a customer-support chatbot off a closed API to open models on Token Factory. It uses the OpenAI SDK directly with one tool (order lookup) and needs structured JSON answers. Prove the raw OpenAI SDK tool call works, run the conformance kit to confirm json_schema output and streaming, benchmark the model on a support reply, and tell us what to change in our code.",
+        "prompt": "We are moving a customer-support chatbot off a closed API to open models on Token Factory. It uses the OpenAI SDK directly with one tool (order lookup) and needs structured JSON answers. Prove the raw OpenAI SDK tool call works against deepseek-ai/DeepSeek-V4.1-Flash-1017 (fall back to the configured model if not served), run the conformance kit on it to confirm json_schema output and streaming, benchmark it against Qwen/Qwen3-30B-A3B-Instruct-2507 on a support reply, search the web for the current Token Factory rate limits and pricing page, and tell us what to change in our code.",
         "blurb": "Wire-level proof, structured output checked, migration notes.",
     },
     {
         "id": "model-readiness",
+        "model": "moonshotai/Kimi-K3",
         "title": "Is this model agent-ready?",
         "workload": "integration",
         "framework": "pydantic_ai",
         "budget_ms": "",
-        "prompt": "A new model just landed on Token Factory. Run the conformance kit on the configured model and summarise, check by check, what an agent builder can rely on (tools, parallel calls, json_schema output, streaming, prefix cache) and what to avoid. Then run the pydantic_ai probe to confirm a framework round-trip.",
+        "prompt": "A new model just landed on Token Factory: moonshotai/Kimi-K3 (use the configured model if it is not served). Run the conformance kit on it and summarise, check by check, what an agent builder can rely on (tools, parallel calls, json_schema output, streaming, prefix cache) and what to avoid. Then run the pydantic_ai probe on it to confirm a framework round-trip, and benchmark it against Qwen/Qwen3.5-397B-A17B on a short agent step.",
         "blurb": "The day-one report for a new model.",
     },
 ]
