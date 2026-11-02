@@ -269,14 +269,16 @@ The same app runs in two modes, chosen by one environment variable:
 | Mode | How | What is different |
 |---|---|---|
 | **Server** (default): laptop, Docker, `deploy/k8s.yaml` | `make studio` / `nebius-agent studio` | runs live in memory, SSE reconnects, recordings can be saved, dedicated-endpoint provisioning allowed |
-| **Stateless** (`STUDIO_STATELESS=1`): Vercel or any serverless host | `api/index.py` exposes the FastAPI app | one request runs the scout and streams it (`POST /api/runs/stream`); audio and charts are sent inline; recordings in `demo/runs` replay but new ones are not saved; the sandbox is Daytona only; dedicated-endpoint provisioning is off because it outlives a serverless request |
+| **Stateless** (`STUDIO_STATELESS=1`): Vercel or any serverless host | `api/index.py` exposes the FastAPI app | one request runs the scout and streams it (`POST /api/runs/stream`); audio and charts are sent inline; recordings in `demo/runs` replay but new ones are not saved; the sandbox is Daytona only; dedicated-endpoint provisioning works when the request limit allows it (Vercel Pro, see below) |
+
+Hosted copy: **https://nebius-integration-scout.vercel.app** (same repo, stateless mode). Measured there: the coding scenario (Kimi-K3 session in Daytona, 10 tests, chart) in 169 s; the voice scenario with the dedicated switch on in 426 s — endpoint ready in 323 s, 77 ms warm TTFT on the dedicated 1×H200 vs 302 ms shared, deleted at the end, 0.3 billable minutes.
 
 **Vercel, one time:** install the CLI (`npm i -g vercel` or use `npx`), then from the repo root
 
 ```bash
 npx vercel link                 # pick / create the project
 bash scripts/vercel_env.sh      # copies the keys from .env into the project (production)
-npx vercel --prod               # deploy; vercel.json sets maxDuration=300 and routes everything to api/index.py
+npx vercel --prod               # deploy; vercel.json sets maxDuration=800 and Vercel serves the FastAPI app from api/index.py
 ```
 
 After that every `git push` to `main` deploys if the project is connected to the GitHub repo in the Vercel dashboard.

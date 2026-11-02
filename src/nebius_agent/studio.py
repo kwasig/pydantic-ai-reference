@@ -275,7 +275,11 @@ async def _execute(run: Run, settings: Settings) -> None:
             ]
         except Exception:  # noqa: BLE001
             run.spans = []
-        root = next((sp for sp in run.spans if not sp.get("parent_span_id")), None)
+        # The agent's root span may itself have a parent when the host runtime wraps the request
+        # (seen on Vercel), so key the trace off the invoke_agent span rather than "no parent".
+        root = next((sp for sp in run.spans if sp["name"].split(" ")[0] in ("invoke_agent", "agent")), None) or next(
+            (sp for sp in run.spans if not sp.get("parent_span_id")), None
+        ) or (run.spans[-1] if run.spans else None)
         run.trace_id = root["trace_id"] if root else None
         project = getattr(app.state, "langfuse_project", None)
         url = None
