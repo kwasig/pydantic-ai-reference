@@ -281,7 +281,7 @@ npx vercel --prod               # deploy; vercel.json sets maxDuration=300 and r
 
 After that every `git push` to `main` deploys if the project is connected to the GitHub repo in the Vercel dashboard.
 
-Vercel runs the app as a function with a per-request time limit set by the plan: **300 s on Hobby, 800 s on Pro**. Every scenario finishes in 1–3 minutes. The dedicated-endpoint run holds one request open for ~7.5 minutes (provision ≈ 5.5 min, warm-up, benchmark, delete), so it needs Pro: set `"maxDuration": 800` in `vercel.json` and `ALLOW_DEDICATED=1` in the project's environment. On Hobby leave both as they are and the scout recommends the dedicated endpoint as a next step instead.
+Vercel runs the app as a function with a per-request time limit set by the plan: **300 s on Hobby, 800 s on Pro**. Every scenario finishes in 1–3 minutes. The dedicated-endpoint run holds one request open for ~7.5 minutes (provision ≈ 5.5 min, warm-up, benchmark, delete), so it needs Pro. The repo is configured for Pro (`"maxDuration": 800`, `ALLOW_DEDICATED=1`); on Hobby set `maxDuration` to 300 and `VERCEL_ALLOW_DEDICATED=0` before running `scripts/vercel_env.sh`, and the scout recommends the dedicated endpoint as a next step instead.
 
 ## 9. Repo map
 
