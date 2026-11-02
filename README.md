@@ -59,14 +59,17 @@ The four example scenarios target the newest models Token Factory serves (MiniMa
 
 ![A recorded live run replayed: Daytona sandbox probe with the tool call verified, the 13-check kit, two benchmarks, and the plan with Cartesia's spoken verdict](docs/img/scout-sandbox.png)
 
+![The coding-agent session, recorded live: Kimi-K3 in a Daytona sandbox writes metrics.py and tests, runs pytest (6 pass), renders chart.png; the chart comes back into the plan](docs/img/scout-session.png)
+
 The Studio ("Nebius Integration Scout") is the FDE motion as a product for a partner: describe the workload (type, framework, TTFT budget, volume) or pick an example, and the
 agent **proves** things rather than describing them:
 
 | Step | What actually happens | Where |
 |---|---|---|
 | `run_probe` | writes a framework probe (PydanticAI, LangGraph or raw OpenAI SDK) into a **Daytona sandbox**, installs the framework, runs it against Token Factory, and reports whether the tool call *really* happened and with which arguments | `probes/`, `sandbox.py` |
+| `run_coding_session` | a real coding-agent session inside the sandbox: a PydanticAI agent on the model gets `write_file` and `run` tools, implements a module, writes pytest tests, runs them to green and renders a matplotlib chart. The UI shows every tool call, an *independent* pytest result (the probe re-runs the tests itself, it does not trust the model's self-report), the files, and the chart copied back out of the sandbox. This is what a long-lived sandbox with a filesystem and a shell buys over a one-shot execution API | `probes/coding_agent_probe.py` |
 | `run_conformance` | the 13-check kit, each check streaming into the UI as PASS / PARTIAL / FAIL | `conformance/` |
-| `benchmark` | TTFT and tokens/s on the partner's own prompt, charted live | `tools.py` |
+| `benchmark` | TTFT and tokens/s on the partner's own prompt, charted live. The clock starts at the first streamed token, reasoning or content, and the result carries decode rate, end-to-end rate, chunk counts, reasoning tokens and a `stream_note`; a buffered ("bursty") stream or a reasoning model is reported as such rather than as a flattering number | `tools.py` |
 | `web_search` | live grounding via Tavily when the ask needs facts | `tools.py` |
 | report | a typed `FdeReport`: verdict, model, findings with numbers, next steps; plus deliverables derived from what was verified, not from prose: a copy-paste integration snippet for the partner's framework, a downloadable `INTEGRATION.md`, the TTFT budget check, and a cost estimate when `pricing.json` has prices | `studio_agent.py`, `studio.py` |
 | voice | the report's 60-word `spoken_summary`, synthesised by **Cartesia Sonic** and played in the page (browser speech if no key) | `voice.py` |
@@ -231,7 +234,8 @@ to a field-to-product ticket when it does not. Adding a framework later means re
 | Token Factory · `Qwen/Qwen3-30B-A3B-Instruct-2507` | — | 12/13 · 1 PARTIAL | 304 ms TTFT, 231 tok/s on the shared endpoint; prefix cache not observable in that run |
 | Token Factory · `deepseek-ai/DeepSeek-V4.1-Flash-1017` | — | 12/13 · 1 FAIL | `structured.json_schema` returns prose; 1,788 tok/s, 638 ms TTFT |
 | Token Factory · `moonshotai/Kimi-K2.7-Code` | — | 9/13 · 2 FAIL | empty `chat.basic` content, no streamed text deltas; 838 tok/s |
-| Token Factory · `moonshotai/Kimi-K3` | — | 8/13 · 4 FAIL | `chat.basic`, `tools.choice_required`, `tools.choice_named`, `structured.json_schema` |
+| Token Factory · `moonshotai/Kimi-K3` | — | 9/13 · 3 FAIL | `chat.basic`, `tools.choice_named`, `structured.json_schema`; yet it completed the full coding session in Daytona (code, 6 tests green, chart) with 352 ms TTFT and ~210 tok/s end to end |
+| Token Factory · `moonshotai/Kimi-K2.7-Code` (benchmark) | — | — | reasoning model: on a 160-token budget every token was reasoning and no content arrived; 32 s to the first visible token. The benchmark now says so instead of reporting 3,400 tok/s |
 | Token Factory · `MiniMaxAI/MiniMax-M3.1-Flash` | — | probe ✔ | PydanticAI tool call verified; **3.2 s TTFT** on the shared endpoint (10× a voice budget) |
 | **Daytona** | — | ✔ | ephemeral `python:3.12-slim` sandboxes created, probe uploaded + executed, deleted; PydanticAI, LangGraph and OpenAI-SDK probes all reported `tool_called=true` |
 | **Cartesia** | — | ✔ | `sonic-3` speaks every verdict (≈2.7–3.7 s per 60 words) |
