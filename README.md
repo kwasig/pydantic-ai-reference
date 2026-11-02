@@ -11,10 +11,11 @@ What you get:
 | **Reference agent** | `nebius-agent run "..."` — a "latency scout" that lists served models, benchmarks candidates on the partner's own prompt, optionally grounds with Tavily, and returns a typed `ModelRecommendation`. Tool calling, structured output (3 modes), streaming. |
 | **Traces** | OpenTelemetry spans using the GenAI semantic conventions, out of the box. Ship them to a JSONL file, the console, or any OTLP backend (Langfuse shortcut included). |
 | **Conformance kit** | `nebius-agent verify` — 12 framework-agnostic checks (tool calls, parallel calls, `tool_choice`, `json_schema` output, streaming tool-call deltas, prefix-cache reporting…) that tell you whether an *endpoint + model* is agent-ready before you touch a framework. This is the reusable piece for partner #2…#10. |
+| **Studio** | `nebius-agent studio` — a web UI where the agent runs framework probes in a Daytona sandbox, the conformance kit, benchmarks and Tavily search live, returns a typed report and speaks it through Cartesia. |
 | **Runtime** | The agent as a FastAPI service, Dockerfile, and a Kubernetes manifest for Nebius Managed Kubernetes (`deploy/`). |
 | **Offline mode** | A deterministic mock of Token Factory so tests, CI and demos run with no key and no network. |
 
-Verified end to end (15 tests, 12 conformance checks) against the mock. Against Token Factory
+Verified end to end (17 tests, 12 conformance checks, a headless-browser run of the Studio) against the mock. Against Token Factory
 itself the same commands produce the partner-facing report; see [Status](#status) for what has
 and has not been run there.
 
@@ -43,6 +44,33 @@ export NEBIUS_BASE_URL=http://127.0.0.1:8008/v1/ NEBIUS_API_KEY=mock   # termina
 nebius-agent verify && nebius-agent run "Pick a model for a coding agent; benchmark one."
 make test                                        # 15 tests, starts its own mock
 ```
+
+
+## 1b. The Studio: watch the agent work
+
+```bash
+make studio          # http://127.0.0.1:8090  (reads .env: NEBIUS_API_KEY, DAYTONA_API_KEY, CARTESIA_API_KEY, TAVILY_API_KEY)
+make studio-mock     # same UI against the mock + local sandbox, no keys
+```
+
+![Nebius FDE Studio: a run against the mock, showing the sandbox probe, the conformance kit, a benchmark, the report and the trace](docs/img/studio-run.png)
+
+The Studio is the FDE motion as a product: pick a scenario (or type the partner's ask), and the
+agent **proves** things rather than describing them:
+
+| Step | What actually happens | Where |
+|---|---|---|
+| `run_probe` | writes a framework probe (PydanticAI, LangGraph or raw OpenAI SDK) into a **Daytona sandbox**, installs the framework, runs it against Token Factory, and reports whether the tool call *really* happened and with which arguments | `probes/`, `sandbox.py` |
+| `run_conformance` | the 12-check kit, each check streaming into the UI as PASS / PARTIAL / FAIL | `conformance/` |
+| `benchmark` | TTFT and tokens/s on the partner's own prompt, charted live | `tools.py` |
+| `web_search` | live grounding via Tavily when the ask needs facts | `tools.py` |
+| report | a typed `FdeReport`: verdict, model, findings with numbers, next steps | `studio_agent.py` |
+| voice | the report's 60-word `spoken_summary`, synthesised by **Cartesia Sonic** and played in the page (browser speech if no key) | `voice.py` |
+| trace | the OpenTelemetry spans for the run, as a tree | `tracing.py` |
+
+Everything streams over Server-Sent Events (`/api/runs/{id}/events`), so the panel can watch a
+sandbox install packages line by line. Without keys the Studio degrades honestly: the status pills
+say "mock", "local fallback" and "browser fallback" so nobody mistakes a stand-in for the real thing.
 
 ## 2. The integration in 25 lines
 
@@ -192,8 +220,8 @@ to a field-to-product ticket when it does not. Adding a framework later means re
 
 | Verified against | tests | conformance | notes |
 |---|---|---|---|
-| mock Token Factory (`src/mock_server`) | 15/15 | 12/12 PASS | deterministic; runs in CI with no secrets |
-| Token Factory (`api.tokenfactory.nebius.com`) | — | run `make verify-real` | fill this table from `reports/*.json` before the panel; expect PARTIAL on `tools.parallel` and `cache.cached_tokens` for some models |
+| mock Token Factory (`src/mock_server`) | 17/17 | 12/12 PASS | deterministic; runs in CI with no secrets; Studio driven end to end in headless Chromium |
+| Token Factory (`api.tokenfactory.nebius.com`) + Daytona + Cartesia | — | run `make live` | fill this table from `reports/*.json` before the panel; expect PARTIAL on `tools.parallel` and `cache.cached_tokens` for some models |
 
 Known gaps / next: a `tests/test_langgraph_through_framework.py` to prove the kit generalises; a Langfuse `docker-compose` for self-hosting on Nebius; cost per million tokens pulled from the pricing API into `benchmark_model`.
 
@@ -201,6 +229,7 @@ Known gaps / next: a `tests/test_langgraph_through_framework.py` to prove the ki
 
 ```
 src/nebius_agent/   config.py provider.py tools.py agent.py tracing.py cli.py server.py
+                    studio.py studio_agent.py sandbox.py voice.py probes/ static/   # the Studio
 src/conformance/    checks.py run.py            # framework-agnostic kit
 src/mock_server/    server.py                   # deterministic OpenAI-compatible fake
 tests/              15 tests through PydanticAI's abstractions + the kit + the service

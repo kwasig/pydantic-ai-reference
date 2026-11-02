@@ -115,6 +115,25 @@ def verify(
 
 
 @app.command()
+def studio(
+    port: int = typer.Option(8090, help="port for the Studio UI"),
+    host: str = typer.Option("127.0.0.1"),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="open the UI in your browser"),
+) -> None:
+    """Start the Nebius FDE Studio web UI (live agent runs with sandbox, benchmarks, voice and traces)."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    s = get_settings()
+    console.print(f"[bold]Nebius FDE Studio[/bold] → http://{host}:{port}   endpoint={s.base_url} model={s.model}")
+    if open_browser:
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
+    uvicorn.run("nebius_agent.studio:app", host=host, port=port, log_level="warning")
+
+
+@app.command()
 def schemas() -> None:
     """Print the JSON schemas PydanticAI derives from the tool functions."""
     from .tools import tool_schemas_preview

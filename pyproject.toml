@@ -32,6 +32,9 @@ nebius-agent = "nebius_agent.cli:app"
 where = ["src"]
 include = ["nebius_agent*", "conformance*", "mock_server*"]
 
+[tool.setuptools.package-data]
+nebius_agent = ["static/*.html", "static/*.js", "probes/*.py"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

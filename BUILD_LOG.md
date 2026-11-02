@@ -42,3 +42,22 @@ Final state: 15 tests pass, 12/12 conformance checks pass against the mock.
   and `cache.cached_tokens` for some models; that is useful information, not a failure of the kit.
 * Pick `NEBIUS_MODEL` from `nebius-agent models` (a tool-calling model; Qwen3 or DeepSeek first).
 * Optional: `TAVILY_API_KEY` for live grounding, Langfuse keys for the OTLP demo.
+
+## Session 2 (Nov 1–2, 2026): the Studio
+
+Feedback after the first pass: "all telemetry, no app". Fair. The second session built the agent
+as a product.
+
+| Step | What happened | Decision / what changed |
+|---|---|---|
+| 12 | Checked outbound network from the build sandbox: Token Factory, Daytona, Cartesia, Tavily and Langfuse are all refused by the gateway. | Everything here is verified against the mock; `scripts/run_live.sh` runs the same thing against the real services on the candidate's machine. Said so plainly in the README Status table. |
+| 13 | Installed the Daytona and Cartesia SDKs from PyPI and inspected them (`AsyncDaytona.create(CreateSandboxFromImageParams)`, `sandbox.fs.upload_file`, `sandbox.process.exec`; `AsyncCartesia.tts.bytes(model_id, transcript, voice, output_format)`). | `sandbox.py`: one interface, Daytona in production, local subprocess in dev, disabled otherwise; `voice.py`: Cartesia with a browser-speech fallback that is labelled as such. |
+| 14 | Wrote framework probes (PydanticAI, raw OpenAI SDK, LangGraph): self-contained scripts that run inside the sandbox, define a tool, run one turn and print `PROBE_RESULT {...}` with `tool_called`. | This is how the Studio *proves* an integration instead of asserting it. |
+| 15 | Studio agent: `run_probe`, `run_conformance`, `benchmark`, `web_search`, typed `FdeReport` with a 60-word `spoken_summary`. Tools emit progress events into the UI. | First run against the mock only called `benchmark`: the mock picked tools by prompt keywords and had none for probe/conformance. Taught the mock a sensible order (list → probe → kit → benchmark) and keywords. |
+| 16 | Daytona call from the build sandbox failed with the proxy's 403 and crashed the run. | Tools must never crash a run: `run_probe` now catches sandbox errors, falls back to the local sandbox when allowed, and reports the fallback in the result. Tests pin `daytona_api_key=""` so `.env` cannot leak into CI. |
+| 17 | FastAPI Studio: run manager, SSE event stream with replay, status endpoint that pings the endpoint, audio serving; the UI (scenarios, live timeline, sandbox terminal, conformance grid, benchmark chart, report, voice, trace tree). | |
+| 18 | Drove the UI in headless Chromium with Playwright. First attempt: the page never started a run. | The sandbox blocks CDNs, so `Chart` was undefined and `drawChart()` threw before the run began. Vendored Chart.js into `static/` from the npm registry and guarded the chart code. Also stopped auto-scrolling the whole window. Screenshots in `docs/img/`. |
+| 19 | `tests/test_studio.py`: starts a run through the API, follows the SSE stream, asserts the probe reported `tool_called=true`, 12/12 checks, a benchmark, a report, a voice result and spans. | 17 tests green. |
+
+Not done here: the live run. `make live` on a machine with the keys does: models → conformance
+report → one traced agent run → the Studio with Daytona and Cartesia on.

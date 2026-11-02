@@ -169,19 +169,31 @@ def _pick_tools(tools: list[dict[str, Any]], prompt: str, tool_choice: Any) -> l
     if not plain:
         return fns[:1]
     low = prompt.lower()
-    mentioned = [t for t in plain if t["function"]["name"].lower() in low]
-    chosen = mentioned or plain[:1]
+    wanted = _ordered_wanted(plain, prompt)
+    chosen = wanted[:1] or plain[:1]
     if "parallel" in low and len(plain) >= 2:
         chosen = plain[:2]
     return chosen
 
 
+# the order a sensible agent would call things in; the mock walks this list for tools the prompt asks for
+_ORDER = ["list_models", "run_probe", "run_conformance", "benchmark", "benchmark_model", "web_search", "run_python"]
 _KEYWORDS = {
+    "list_models": ("list", "models", "served", "which model"),
+    "run_probe": ("probe", "prove", "verify", "framework", "integration", "pydantic", "langgraph", "crewai"),
+    "run_conformance": ("conformance", "readiness", "agent-ready", "kit", "check by check", "rely on"),
+    "benchmark": ("benchmark", "measure", "latency", "time-to-first-token", "ttft"),
     "benchmark_model": ("benchmark", "measure", "latency"),
-    "web_search": ("search", "web", "look up"),
+    "web_search": ("search the web", "look up", "latest news"),
     "run_python": ("python", "run code", "calculate"),
-    "list_models": ("list", "models", "served"),
 }
+
+
+def _ordered_wanted(plain: list[dict[str, Any]], prompt: str) -> list[dict[str, Any]]:
+    by_name = {t["function"]["name"]: t for t in plain}
+    ordered = [by_name[n] for n in _ORDER if n in by_name and _wanted(n, prompt)]
+    ordered += [t for t in plain if t not in ordered and _wanted(t["function"]["name"], prompt)]
+    return ordered
 
 
 def _wanted(tool_name: str, prompt: str) -> bool:
@@ -282,7 +294,7 @@ def _decide(body: dict[str, Any]) -> dict[str, Any]:
             return {"tool_calls": _make_tool_calls(_pick_tools(tools, prompt, tool_choice), prompt)}
         # multi-step: keep calling tools the user asked for by name/keyword until each has run once
         called = {tc["function"]["name"] for m in messages if m.get("role") == "assistant" for tc in (m.get("tool_calls") or [])}
-        pending = [t for t in plain if t["function"]["name"] not in called and _wanted(t["function"]["name"], prompt)]
+        pending = [t for t in _ordered_wanted(plain, prompt) if t["function"]["name"] not in called]
         if pending and len(called) < 4:
             return {"tool_calls": _make_tool_calls(pending[:1], prompt)}
         if output_tools:

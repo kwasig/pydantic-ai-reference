@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebius FDE Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="/static/chart.umd.js"></script>
+<style>
+/* Layout: a console. Top status bar, a left rail to launch runs, a wide live timeline, a right rail for the result, voice and trace. */
+:root {
+  --bg:#0f1218; --panel:#161b24; --panel-2:#1c2230; --ink:#e9edf5; --muted:#8e98ad; --rule:#273042;
+  --accent:#7c9cff; --accent-soft:#1f2a4a; --good:#4cc38a; --warn:#e5b25c; --bad:#f06a6a; --nebius:#8fd3ff;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --body:"Source Sans 3","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --bg:#f3f5f9; --panel:#ffffff; --panel-2:#f1f4fa; --ink:#151a24; --muted:#5b6478; --rule:#dde2ec; --accent:#2c4fd1; --accent-soft:#e6ecfd; --good:#1f8f5f; --warn:#a1620b; --bad:#c6383c; --nebius:#1e6fb0; color-scheme: light; }
+}
+* { box-sizing:border-box }
+html,body { height:100% }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 var(--body); }
+header { display:flex; align-items:center; gap:18px; padding:12px 20px; border-bottom:1px solid var(--rule); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap }
+.brand { font-family:var(--display); font-weight:700; font-size:20px; letter-spacing:-.01em }
+.brand small { font-family:var(--mono); font-weight:500; font-size:11px; color:var(--muted); margin-left:10px; letter-spacing:.08em; text-transform:uppercase }
+.pills { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto }
+.pill { display:inline-flex; align-items:center; gap:6px; font:500 12px var(--mono); padding:5px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--panel-2); color:var(--muted) }
+.pill .dot { width:8px; height:8px; border-radius:50%; background:var(--muted) }
+.pill.live .dot { background:var(--good) } .pill.mock .dot { background:var(--warn) } .pill.off .dot { background:var(--bad) }
+.pill.live, .pill.mock { color:var(--ink) }
+main { display:grid; grid-template-columns: 330px minmax(0,1fr) 380px; gap:16px; padding:16px 20px 40px; max-width:1680px; margin:0 auto }
+@media (max-width:1180px) { main { grid-template-columns: 300px minmax(0,1fr) } .right { grid-column: 1 / -1 } }
+@media (max-width:760px) { main { grid-template-columns: 1fr } }
+.panel { background:var(--panel); border:1px solid var(--rule); border-radius:10px; padding:16px; min-width:0 }
+h2 { font-family:var(--display); font-weight:500; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 12px }
+.scen { display:flex; flex-direction:column; gap:8px }
+.scen button { text-align:left; background:var(--panel-2); border:1px solid var(--rule); color:var(--ink); border-radius:8px; padding:10px 12px; cursor:pointer; font:inherit }
+.scen button:hover, .scen button.sel { border-color:var(--accent); background:var(--accent-soft) }
+.scen b { display:block; font-family:var(--display); font-weight:500; font-size:15px }
+.scen span { color:var(--muted); font-size:13px }
+textarea, select { width:100%; background:var(--panel-2); color:var(--ink); border:1px solid var(--rule); border-radius:8px; padding:10px; font:inherit; margin-top:10px }
+textarea { min-height:110px; resize:vertical }
+.run { margin-top:12px; width:100%; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:12px; font:600 15px var(--body); cursor:pointer }
+.run[disabled] { opacity:.5; cursor:wait }
+.stack { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px }
+.stack span { font:500 11px var(--mono); color:var(--muted); border:1px solid var(--rule); border-radius:6px; padding:3px 7px }
+/* timeline */
+.tl { display:flex; flex-direction:column; gap:10px; max-height: calc(100vh - 140px); overflow:auto; padding-right:4px }
+.step { background:var(--panel-2); border:1px solid var(--rule); border-radius:10px; padding:12px 14px; animation:in .18s ease-out }
+@keyframes in { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
+.step .hd { display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:500; font-size:15px }
+.step .hd .t { margin-left:auto; font:500 11px var(--mono); color:var(--muted) }
+.step .hd .ic { width:26px; height:26px; border-radius:7px; display:grid; place-items:center; font:600 11px var(--mono); background:var(--accent-soft); color:var(--accent) }
+.step.sandbox .ic { background:#1f3a2e; color:var(--good) } .step.conf .ic { background:#3a2f1f; color:var(--warn) } .step.bench .ic { background:#2a1f3a; color:#c9a6ff } .step.report .ic { background:var(--accent); color:#fff } .step.voice .ic { background:#1f3340; color:var(--nebius) } .step.err .ic { background:#3a1f1f; color:var(--bad) }
+.args { font:12.5px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; word-break:break-word }
+details { margin-top:6px } summary { cursor:pointer; color:var(--muted); font-size:13px }
+pre.json { font:12px/1.45 var(--mono); background:var(--bg); border:1px solid var(--rule); border-radius:8px; padding:10px; margin:6px 0 0; overflow:auto; max-height:260px }
+.term { font:12.5px/1.5 var(--mono); background:#0b0e13; color:#cfe3c8; border-radius:8px; padding:10px 12px; margin-top:8px; max-height:280px; overflow:auto; border:1px solid #1e2a22 }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .term { background:#0f1a14 } }
+.term .k { color:#8fd3ff } .term .ok { color:var(--good) } .term .no { color:var(--bad) }
+.checks { display:grid; grid-template-columns: 1fr auto auto; gap:4px 12px; font:12.5px var(--mono); margin-top:8px }
+.checks .b { font-weight:500; border-radius:5px; padding:0 7px; justify-self:start }
+.PASS { color:var(--good); background:#163726 } .PARTIAL { color:var(--warn); background:#3a2f1f } .FAIL { color:var(--bad); background:#3a1f1f }
+.spin { display:inline-block; width:12px; height:12px; border:2px solid var(--rule); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; margin-left:6px }
+@keyframes sp { to { transform:rotate(360deg) } }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:14px } .kv dt { color:var(--muted); font:500 11px var(--mono); text-transform:uppercase; letter-spacing:.06em; padding-top:4px } .kv dd { margin:0 }
+.badge { display:inline-block; font:600 11px var(--mono); border-radius:6px; padding:2px 8px; letter-spacing:.04em }
+.badge.ok { background:#163726; color:var(--good) } .badge.no { background:#3a1f1f; color:var(--bad) }
+ul.tight { margin:6px 0 0; padding-left:18px } ul.tight li { margin:2px 0 }
+.right { display:flex; flex-direction:column; gap:16px }
+audio { width:100%; margin-top:8px }
+.btn { background:var(--panel-2); color:var(--ink); border:1px solid var(--rule); border-radius:8px; padding:8px 12px; font:600 13px var(--body); cursor:pointer }
+.spans { font:12px var(--mono); display:flex; flex-direction:column; gap:3px; max-height:320px; overflow:auto }
+.spans div { display:flex; gap:8px } .spans .n { color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .spans .d { margin-left:auto; color:var(--muted) }
+.empty { color:var(--muted); font-size:14px }
+canvas { max-height:220px }
+.usage { font:12px var(--mono); color:var(--muted); margin-top:8px }
+.muted { color:var(--muted) }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Nebius FDE Studio <small>forward-deployed engineer in a box</small></div>
+  <div class="pills" id="pills"><span class="pill"><span class="dot"></span>checking services…</span></div>
+</header>
+
+<main>
+  <aside class="panel">
+    <h2>Scenario</h2>
+    <div class="scen" id="scen"></div>
+    <textarea id="prompt" placeholder="…or write the partner's ask in your own words"></textarea>
+    <select id="model"></select>
+    <button class="run" id="go">Run the agent</button>
+    <div class="stack"><span>Token Factory</span><span>PydanticAI</span><span>Daytona</span><span>Cartesia</span><span>Tavily</span><span>OpenTelemetry</span></div>
+  </aside>
+
+  <section class="panel">
+    <h2>Live timeline</h2>
+    <div class="tl" id="tl"><div class="empty">Pick a scenario and run. Every tool call, sandbox line, check and benchmark shows up here as it happens.</div></div>
+  </section>
+
+  <aside class="right">
+    <div class="panel"><h2>Result</h2><div id="result" class="empty">No run yet.</div></div>
+    <div class="panel"><h2>Benchmarks</h2><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Benchmarks appear here as the agent measures models.</div></div>
+    <div class="panel"><h2>Voice</h2><div id="voice" class="empty">The agent speaks its summary at the end of a run (Cartesia Sonic, or your browser as a fallback).</div></div>
+    <div class="panel"><h2>Trace</h2><div id="trace" class="empty">OpenTelemetry spans (GenAI semantic conventions) for the last run.</div></div>
+  </aside>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (o) => esc(JSON.stringify(o, null, 2));
+let selected = null, chart = null, benchRows = [], es = null;
+
+async function status() {
+  const r = await fetch('/api/status').then(r => r.json());
+  const tf = r.token_factory;
+  const pills = [];
+  pills.push(pill(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', `Token Factory · ${tf.mock ? 'mock' : (tf.reachable ? 'live' : 'unreachable')} · ${tf.model.split('/').pop()}`));
+  pills.push(pill(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), `Daytona · ${r.daytona.configured ? 'sandbox' : (r.daytona.fallback_local ? 'local fallback' : 'off')}`));
+  pills.push(pill(r.cartesia.configured ? 'live' : 'mock', `Cartesia · ${r.cartesia.configured ? 'Sonic' : 'browser fallback'}`));
+  pills.push(pill(r.tavily.configured ? 'live' : 'off', `Tavily · ${r.tavily.configured ? 'on' : 'off'}`));
+  pills.push(pill(r.langfuse.configured ? 'live' : 'off', `Langfuse · ${r.langfuse.configured ? 'OTLP' : 'off'}`));
+  $('#pills').replaceChildren(...pills);
+}
+function pill(state, text) { const p = el('span', `pill ${state}`); p.innerHTML = `<span class="dot"></span>${esc(text)}`; return p; }
+
+async function init() {
+  status();
+  const sc = await fetch('/api/scenarios').then(r => r.json());
+  const box = $('#scen');
+  sc.forEach(s => {
+    const b = el('button', '', `<b>${esc(s.title)}</b><span>${esc(s.blurb)}</span>`);
+    b.onclick = () => { selected = s.id; $('#prompt').value = s.prompt; [...box.children].forEach(c => c.classList.remove('sel')); b.classList.add('sel'); };
+    box.appendChild(b);
+  });
+  box.children[0].click();
+  const m = await fetch('/api/models').then(r => r.json());
+  const sel = $('#model');
+  m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = id; if (id === m.default) o.selected = true; sel.appendChild(o); });
+  $('#go').onclick = start;
+}
+
+async function start() {
+  $('#go').disabled = true;
+  $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Running…</span>'; $('#voice').innerHTML = '<span class="empty">…</span>'; $('#trace').innerHTML = '<span class="empty">…</span>';
+  benchRows = []; drawChart();
+  const body = { prompt: $('#prompt').value, model: $('#model').value };
+  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+  if (es) es.close();
+  es = new EventSource(`/api/runs/${run_id}/events`);
+  const handlers = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, text, report, voice, trace, error, run_end };
+  Object.keys(handlers).forEach(k => es.addEventListener(k, e => handlers[k](JSON.parse(e.data))));
+  es.onerror = () => {};
+}
+
+const tl = () => $('#tl');
+let current = {};   // open step cards by key
+function step(cls, icon, title, key) {
+  const s = el('div', `step ${cls}`);
+  s.innerHTML = `<div class="hd"><span class="ic">${icon}</span><span class="title">${esc(title)}</span><span class="t"></span></div>`;
+  tl().appendChild(s);
+  if (key) current[key] = s;
+  return s;
+}
+const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)}s`; };
+
+function run_start(d) {
+  const s = step('', '▶', `Run started on ${d.mock ? 'the mock Token Factory' : 'Token Factory'} · ${d.model} · sandbox: ${d.sandbox}`);
+  stamp(s, d.t);
+  s.appendChild(el('div', 'args', esc(d.prompt)));
+}
+function tool_call(d) {
+  const s = step('', 'fn', `Agent calls ${d.tool}`, `tool:${d.call_id}`);
+  stamp(s, d.t);
+  s.appendChild(el('div', 'args', esc(JSON.stringify(d.args))));
+  s.appendChild(el('span', 'spin'));
+}
+function tool_result(d) {
+  const s = current[`tool:${d.call_id}`];
+  if (s) { s.querySelector('.spin')?.remove(); const det = el('details'); det.innerHTML = `<summary>result</summary><pre class="json">${fmt(d.result)}</pre>`; s.appendChild(det); stamp(s, d.t); }
+}
+function sandbox(d) {
+  if (d.status === 'start') {
+    const s = step('sandbox', '⌘', `Sandbox (${d.backend}): running ${d.framework} probe against ${d.model}`, 'sandbox');
+    stamp(s, d.t);
+    s.appendChild(el('div', 'args', `files: ${d.files.join(', ')}`));
+    s.appendChild(el('div', 'term'));
+  } else {
+    const s = current['sandbox']; if (!s) return;
+    stamp(s, d.t);
+    const ok = d.tool_called;
+    const v = el('div', 'args');
+    v.innerHTML = `<span class="badge ${ok ? 'ok' : 'no'}">${ok ? 'TOOL CALL VERIFIED' : 'TOOL CALL NOT OBSERVED'}</span> exit=${d.exit_code} · probe ${d.probe_elapsed_ms ?? '–'} ms · sandbox ${Math.round(d.sandbox_elapsed_ms)} ms · ${esc(d.notes)}`
+      + (d.tool_args ? `<div>tool args from inside the framework: <code>${esc(JSON.stringify(d.tool_args))}</code></div>` : '')
+      + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
+    s.appendChild(v);
+  }
+}
+function sandbox_log(d) {
+  const s = current['sandbox']; if (!s) return;
+  const t = s.querySelector('.term'); const line = el('div');
+  let txt = esc(d.line);
+  if (d.line.startsWith('PROBE_RESULT')) txt = `<span class="ok">${txt}</span>`; else if (/daytona:|local:/.test(d.line)) txt = `<span class="k">${txt}</span>`; else if (/error|Traceback|failed/i.test(d.line)) txt = `<span class="no">${txt}</span>`;
+  line.innerHTML = txt; t.appendChild(line); t.scrollTop = t.scrollHeight;
+}
+function conformance(d) {
+  if (d.status === 'start') {
+    const s = step('conf', '✓', `Conformance kit: ${d.total} checks on ${d.model}`, 'conf'); stamp(s, d.t);
+    s.appendChild(el('div', 'checks'));
+  } else {
+    const s = current['conf']; if (!s) return; stamp(s, d.t);
+    s.appendChild(el('div', 'args', `<b>${d.passed} pass · ${d.partial} partial · ${d.failed} fail</b>${d.not_pass.length ? ' · ' + esc(d.not_pass.join(', ')) : ''}`));
+  }
+}
+function conformance_check(d) {
+  const s = current['conf']; if (!s) return;
+  const g = s.querySelector('.checks');
+  g.appendChild(el('span', '', esc(d.name)));
+  g.appendChild(el('span', `b ${d.status}`, d.status));
+  g.appendChild(el('span', 'muted', esc(d.detail).slice(0, 70)));
+}
+function benchmark(d) {
+  if (d.status === 'start') { const s = step('bench', '⏱', `Benchmarking ${d.model} (${d.runs} runs, streaming)`, `bench:${d.model}`); stamp(s, d.t); s.appendChild(el('span', 'spin')); }
+  else {
+    const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t);
+      s.appendChild(el('div', 'args', `TTFT <b>${d.ttft_ms} ms</b> · <b>${d.tokens_per_s} tok/s</b> · ${d.output_tokens} output tokens · prefix cache hit: ${d.cached_prompt_tokens} tokens`)); }
+    benchRows.push(d); drawChart();
+  }
+}
+function text(d) { let s = current['text']; if (!s) { s = step('', '…', 'Agent', 'text'); s.appendChild(el('div', 'args')); } s.querySelector('.args').textContent += d.delta; }
+function report(d) {
+  const r = d.report;
+  const s = step('report', '★', r.title); stamp(s, d.t);
+  s.appendChild(el('div', 'args', `<span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'INTEGRATION VERIFIED' : 'NOT VERIFIED'}</span> · workload ${esc(r.workload)} · recommended <b>${esc(r.recommended_model)}</b>`));
+  const res = $('#result');
+  res.innerHTML = `
+    <div style="font-family:var(--display);font-size:18px;font-weight:700">${esc(r.title)}</div>
+    <div style="margin:6px 0 10px"><span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'INTEGRATION VERIFIED' : 'NOT VERIFIED'}</span></div>
+    <dl class="kv"><dt>Model</dt><dd>${esc(r.recommended_model)}</dd><dt>Workload</dt><dd>${esc(r.workload)}</dd>
+    ${r.conformance ? `<dt>Kit</dt><dd>${r.conformance.passed} pass · ${r.conformance.partial} partial · ${r.conformance.failed} fail<br><span class="muted">${esc(r.conformance.notes)}</span></dd>` : ''}
+    ${r.probes.length ? `<dt>Probes</dt><dd>${r.probes.map(p => `${esc(p.framework)} on ${esc(p.backend)}: ${p.tool_called ? '✅' : '❌'} ${esc(p.summary)}`).join('<br>')}</dd>` : ''}
+    </dl>
+    <h2 style="margin-top:12px">Findings</h2><ul class="tight">${r.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <h2 style="margin-top:12px">Next steps</h2><ul class="tight">${r.next_steps.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <div class="usage">usage: ${d.usage.requests} requests · ${d.usage.input_tokens} in · ${d.usage.output_tokens} out · cache read ${d.usage.cache_read_tokens}</div>`;
+}
+function voice(d) {
+  if (d.status === 'start') { const s = step('voice', '♪', 'Speaking the summary', 'voice'); stamp(s, d.t); s.appendChild(el('div', 'args', `"${esc(d.text)}"`)); return; }
+  const s = current['voice']; if (s) stamp(s, d.t);
+  const v = $('#voice');
+  if (d.mode === 'cartesia' && d.url) {
+    v.innerHTML = `<div><span class="badge ok">CARTESIA ${esc(d.model || '')}</span> <span class="muted">synthesised in ${Math.round(d.elapsed_ms)} ms</span></div><audio controls autoplay src="${d.url}"></audio><div class="args">"${esc(d.text)}"</div>`;
+  } else {
+    v.innerHTML = `<div><span class="badge no">BROWSER FALLBACK</span> <span class="muted">${esc(d.error || 'set CARTESIA_API_KEY for Sonic')}</span></div><div class="args">"${esc(d.text)}"</div><button class="btn" id="say" style="margin-top:8px">Play with browser voice</button>`;
+    const say = () => { try { const u = new SpeechSynthesisUtterance(d.text); speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {} };
+    $('#say').onclick = say; say();
+  }
+}
+function trace(d) {
+  const t = $('#trace');
+  if (!d.spans.length) { t.innerHTML = '<span class="empty">no spans captured</span>'; return; }
+  const byId = {}; d.spans.forEach(s => byId[s.span_id] = s);
+  const depth = (s) => { let n = 0, p = s.parent_span_id; while (p && byId[p]) { n++; p = byId[p].parent_span_id; } return n; };
+  const rows = d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => {
+    const a = s.attributes || {}; const extra = a['gen_ai.tool.name'] || a['gen_ai.request.model'] || '';
+    return `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}${extra && !s.name.includes(extra) ? ' <span class="muted">' + esc(extra) + '</span>' : ''}</span><span class="d">${s.duration_ms} ms</span></div>`;
+  }).join('');
+  t.innerHTML = `<div class="muted" style="font-size:13px;margin-bottom:6px">${d.count} spans · OpenTelemetry · gen_ai.* attributes</div><div class="spans">${rows}</div>`;
+}
+function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); s.appendChild(el('div', 'args', esc(d.message))); $('#result').innerHTML = `<span class="badge no">ERROR</span> <span class="muted">${esc(d.message)}</span>`; }
+function run_end(d) { const s = step('', '■', `Run ${d.status} in ${d.elapsed_s}s`); stamp(s, d.t); $('#go').disabled = false; es && es.close(); current = {}; }
+
+function drawChart() {
+  if (typeof Chart === 'undefined') { $('#chartEmpty').textContent = benchRows.map(r => `${r.model}: TTFT ${r.ttft_ms} ms, ${r.tokens_per_s} tok/s`).join(' · ') || 'Benchmarks appear here as the agent measures models.'; return; }
+  const c = $('#chart'); $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block';
+  const labels = benchRows.map(r => r.model.split('/').pop());
+  const data = {
+    labels,
+    datasets: [
+      { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(124,156,255,.75)', yAxisID: 'y' },
+      { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(76,195,138,.75)', yAxisID: 'y1' },
+    ],
+  };
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+  const opts = { responsive: true, animation: { duration: 250 }, plugins: { legend: { labels: { color: ink } } },
+    scales: { x: { ticks: { color: ink }, grid: { display: false } }, y: { position: 'left', title: { display: true, text: 'TTFT ms', color: ink }, ticks: { color: ink }, grid: { color: 'rgba(128,128,128,.15)' } },
+              y1: { position: 'right', title: { display: true, text: 'tok/s', color: ink }, ticks: { color: ink }, grid: { drawOnChartArea: false } } } };
+  if (chart) { chart.data = data; chart.update(); } else { chart = new Chart(c, { type: 'bar', data, options: opts }); }
+}
+init();
+</script>
+</body>
+</html>
