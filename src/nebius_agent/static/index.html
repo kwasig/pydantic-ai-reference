@@ -253,7 +253,7 @@ const body = s => s.querySelector('.body');
 const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)} s`; };
 const TOOL = { list_models: 'Listing served models', run_probe: 'Starting a framework probe', run_conformance: 'Starting the conformance kit', benchmark: 'Benchmarking', web_search: 'Searching the web' };
 function run_start(d) { if (d.services) status(d.services); const s = step('', '', `${d.replay ? 'Replaying a recorded run' : 'Scout started'} on ${d.mock ? 'the mock Token Factory' : 'Token Factory'}, sandbox ${d.sandbox}`); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>the ask</summary><div class="meta">${esc(d.prompt)}</div>`; body(s).appendChild(det); }
-const QUIET = new Set(['run_probe', 'run_conformance', 'benchmark']);  // these get their own richer step below
+const QUIET = new Set(['run_probe', 'run_coding_session', 'run_conformance', 'benchmark']);  // these get their own richer step below
 function tool_call(d) { if (QUIET.has(d.tool)) return; const s = step('', '', `${TOOL[d.tool] || d.tool}${d.args && d.args.model ? ' ' + short(d.args.model) : ''}`, `tool:${d.call_id}`); stamp(s, d.t); if (d.args && Object.keys(d.args).length) body(s).appendChild(el('div', 'meta code', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
 function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }
 const sbKey = d => `sandbox:${d.probe || d.framework || 'last'}`;
