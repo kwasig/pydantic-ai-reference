@@ -90,7 +90,7 @@ h3 { font: 600 13.5px var(--sans); margin: 18px 0 6px; color: var(--ink) }
 .step::before { content: ""; position: absolute; left: 10px; top: 32px; bottom: -4px; width: 2px; background: var(--rule) }
 .step:last-child::before { display: none }
 .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--rule); background: var(--panel); display: grid; place-items: center; font: 700 10px var(--sans); color: var(--muted); margin-top: 1px }
-.step.sandbox .dot { border-color: var(--good); color: var(--good) } .step.conf .dot { border-color: var(--warn); color: var(--warn) } .step.bench .dot { border-color: var(--violet); color: var(--violet) } .step.report .dot { background: var(--lime); border-color: var(--navy); color: var(--navy) } .step.err .dot { border-color: var(--bad); color: var(--bad) } .step.done .dot { background: var(--navy); border-color: var(--navy); color: #fff }
+.step.sandbox .dot { border-color: var(--good); color: var(--good) } .step.conf .dot { border-color: var(--warn); color: var(--warn) } .step.bench .dot { border-color: var(--violet); color: var(--violet) } .step.dedicated .dot { border-color: var(--blue); color: var(--blue) } .step.report .dot { background: var(--lime); border-color: var(--navy); color: var(--navy) } .step.err .dot { border-color: var(--bad); color: var(--bad) } .step.done .dot { background: var(--navy); border-color: var(--navy); color: #fff }
 .hd { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14px; line-height: 1.35 }
 .hd .t { margin-left: auto; font: 12px var(--mono); color: var(--muted); white-space: nowrap }
 .meta { font-size: 13px; color: var(--ink-2); margin-top: 4px; white-space: pre-wrap; word-break: break-word; line-height: 1.5 }
@@ -196,7 +196,8 @@ async function status(snapshot) {
     svc(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), 'Daytona', r.daytona.configured ? 'sandboxes' : (r.daytona.fallback_local ? 'local fallback' : 'off')),
     svc(r.cartesia.configured ? 'live' : 'mock', 'Cartesia', r.cartesia.configured ? 'Sonic' : 'browser voice'),
     svc(r.langfuse.configured ? 'live' : 'off', 'Langfuse', r.langfuse.configured ? 'tracing' : 'off'),
-    svc(r.tavily.configured ? 'live' : 'off', 'Tavily', r.tavily.configured ? 'search' : 'off'));
+    svc(r.tavily.configured ? 'live' : 'off', 'Tavily', r.tavily.configured ? 'search' : 'off'),
+    svc(r.dedicated && r.dedicated.allowed ? 'live' : 'off', 'Dedicated', r.dedicated && r.dedicated.allowed ? 'can provision' : 'off'));
   if (!snapshot) loadLangfuse();
 }
 async function init() {
@@ -240,7 +241,7 @@ async function start(replay, replayTitle) {
   const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
   if (es) es.close();
   es = new EventSource(`/api/runs/${run_id}/events`);
-  const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, text, report, voice, trace, error, run_end };
+  const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, dedicated, dedicated_log, text, report, voice, trace, error, run_end };
   Object.keys(H).forEach(k => es.addEventListener(k, e => H[k](JSON.parse(e.data))));
   es.onerror = () => {};
 }
@@ -280,6 +281,17 @@ function renderSession(s, d) {
     <div class="why">The sandbox is the agent's own machine: a filesystem, a shell, pip. Every step above ran there, not in this app.</div>`;
   body(s).appendChild(box);
 }
+function dedicated(d) {
+  let s = current['dedicated'];
+  if (d.status === 'skipped') { s = step('', '◇', `Dedicated endpoint for ${short(d.model)} not provisioned`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.reason))); return; }
+  if (d.status === 'creating') { s = step('dedicated', '◆', `Provisioning a dedicated endpoint for ${short(d.model)}: ${d.gpu_count}× ${d.gpu_type}, ${d.region}`, 'dedicated'); stamp(s, d.t); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); body(s).appendChild(el('div', 'term')); body(s).appendChild(el('div', 'meta', `${esc(d.name)}, hard cap ${d.max_minutes} min, deleted when this run ends whatever happens`)); return; }
+  if (!s) return; stamp(s, d.t);
+  if (d.status === 'ready') { body(s).appendChild(el('div', 'meta', `<span class="badge ok">ready in ${Math.round(d.provision_s / 60)} min ${d.provision_s % 60} s</span>  benchmarking on ${esc(d.base_url)}`)); }
+  if (d.status === 'timeout') { s.querySelector('.spin')?.remove(); body(s).appendChild(el('div', 'meta', `<span class="badge warn">not ready after ${Math.round(d.waited_s / 60)} min</span>`)); }
+  if (d.status === 'error') { s.querySelector('.spin')?.remove(); body(s).appendChild(el('div', 'meta', `<span class="badge no">failed</span> ${esc(d.error)}`)); }
+  if (d.status === 'deleted') { s.querySelector('.spin')?.remove(); body(s).appendChild(el('div', 'meta', `<span class="badge ${d.ok ? 'dim' : 'no'}">${d.ok ? 'torn down' : 'delete failed, check the console'}</span>  ${d.billable_minutes} billable minutes, ${Math.round(d.total_s)} s end to end`)); }
+}
+function dedicated_log(d) { const s = current['dedicated']; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); l.innerHTML = `<span class="k">${esc(d.line)}</span>`; t.appendChild(l); t.scrollTop = t.scrollHeight; }
 function sandbox_log(d) { const s = current[sbKey(d)] || lastSandbox; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); let x = esc(d.line); if (d.line.startsWith('PROBE_RESULT')) x = `<span class="ok">${x}</span>`; else if (/^(daytona|local):/.test(d.line)) x = `<span class="k">${x}</span>`; else if (/error|Traceback|failed/i.test(d.line)) x = `<span class="no">${x}</span>`; l.innerHTML = x; t.appendChild(l); t.scrollTop = t.scrollHeight; }
 function conformance(d) {
   if (d.status === 'start') { const s = step('conf', '✓', `Conformance kit, ${d.total} checks on ${short(d.model)}`, 'conf'); stamp(s, d.t); body(s).appendChild(el('div', 'checks')); return; }

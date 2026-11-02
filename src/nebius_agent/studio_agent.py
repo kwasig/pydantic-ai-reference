@@ -10,6 +10,7 @@ returns a typed report whose `spoken_summary` the Studio says out loud through C
 from __future__ import annotations
 
 import base64
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -24,7 +25,7 @@ from .config import Settings, get_settings
 from .probes import PROBES, parse_probe_result
 from .provider import make_client, make_model, token_factory_model_settings
 from .sandbox import Sandbox, get_sandbox
-from .tools import BenchmarkResult, Deps, benchmark_model, list_models, web_search
+from .tools import BenchmarkResult, Deps, benchmark_model, list_models, measure, web_search
 from .tracing import configure_tracing
 
 LogFn = Callable[[str, dict[str, Any]], None]
@@ -91,6 +92,9 @@ Tools, and when to use them:
   README needs the check table, and it tells you whether the model or the framework is at fault.
 - benchmark_model: TTFT and tokens/s on the partner's own prompt. Use for model choice, voice,
   coding agents, or any latency question. Benchmark two candidates when choosing.
+- provision_dedicated_endpoint: when no model meets the partner's latency budget on the shared
+  endpoint, provision a temporary dedicated endpoint for the best candidate, benchmark it there, and
+  tear it down. It refuses unless the operator allowed it; then recommend it as a next step instead.
 - web_search: live facts from the web via Tavily, only when the ask needs them.
 
 Rules:
@@ -268,6 +272,118 @@ async def run_coding_session(ctx: RunContext[StudioDeps], model: str | None = No
     return {k: v for k, v in outcome.items() if k not in ("stderr_tail",)}
 
 
+async def provision_dedicated_endpoint(
+    ctx: RunContext[StudioDeps],
+    model: str | None = None,
+    prompt: str = "Reply to a customer who asks for the status of their order, in 80 words.",
+    max_minutes: int = 12,
+) -> dict[str, Any]:
+    """Provision a temporary dedicated Token Factory endpoint for the model, wait until it is ready, benchmark the
+    partner's prompt on it, and tear it down. Use it when no model meets the latency budget on the shared
+    endpoint and the operator has allowed it (ALLOW_DEDICATED=1); otherwise it returns allowed=false and you
+    must recommend the dedicated endpoint as a next step instead.
+
+    Args:
+        model: Token Factory model id; defaults to the model under evaluation.
+        prompt: the partner's prompt to benchmark on the dedicated endpoint.
+        max_minutes: hard cap; the endpoint is deleted when this elapses even if provisioning is not done.
+    """
+    from .dedicated import DedicatedClient, dedicated_allowed
+
+    s = ctx.deps.settings
+    model = await _served_model(ctx, model)
+    emit = ctx.deps.emit
+    if not dedicated_allowed() or s.is_mock or not s.api_key:
+        emit(
+            "dedicated",
+            {"status": "skipped", "model": model, "reason": "ALLOW_DEDICATED is not set" if not s.is_mock else "mock Token Factory"},
+        )
+        return {
+            "allowed": False,
+            "model": model,
+            "reason": "dedicated endpoints are not enabled for this run; recommend one as a next step",
+        }
+
+    client = DedicatedClient(s.api_key)
+    ep = None
+    t0 = time.perf_counter()
+    try:
+        tpl = await client.find_template(model)
+        if not tpl:
+            emit("dedicated", {"status": "skipped", "model": model, "reason": "no dedicated-endpoint template for this model"})
+            return {"allowed": True, "model": model, "provisioned": False, "reason": "no template for this model"}
+        ep = await client.create(model)
+        emit(
+            "dedicated",
+            {
+                "status": "creating",
+                "model": model,
+                "name": ep.name,
+                "endpoint_id": ep.endpoint_id,
+                "gpu_type": ep.gpu_type,
+                "gpu_count": ep.gpu_count,
+                "region": ep.region,
+                "max_minutes": max_minutes,
+            },
+        )
+
+        def log(line: str) -> None:
+            emit("dedicated_log", {"line": line})
+
+        ready = await client.wait_ready(ep, timeout_s=max_minutes * 60, log=log)
+        if not ready:
+            emit("dedicated", {"status": "timeout", "model": model, "name": ep.name, "waited_s": round(time.perf_counter() - t0)})
+            return {
+                "allowed": True,
+                "model": model,
+                "provisioned": True,
+                "ready": False,
+                "reason": f"not ready within {max_minutes} min; deleted",
+            }
+        provision_s = round(ep.ready_at - ep.created_at)
+        emit("dedicated", {"status": "ready", "model": model, "name": ep.name, "provision_s": provision_s, "base_url": ep.base_url})
+        # benchmark on the dedicated endpoint with the same code path as the shared one
+        from openai import AsyncOpenAI
+
+        ded_client = AsyncOpenAI(base_url=ep.base_url, api_key=s.api_key)
+        emit("benchmark", {"status": "start", "model": f"{model} (dedicated)", "runs": 3})
+        r = await measure(ded_client, ep.routing_key, prompt=prompt, runs=3, max_tokens=160)
+        d = r.model_dump()
+        d["model"] = f"{model} (dedicated)"
+        emit("benchmark", {"status": "done", **d})
+        return {
+            "allowed": True,
+            "model": model,
+            "provisioned": True,
+            "ready": True,
+            "endpoint": ep.name,
+            "gpu": f"{ep.gpu_count}x {ep.gpu_type}",
+            "region": ep.region,
+            "provision_s": provision_s,
+            "dedicated_benchmark": d,
+            "billable_minutes": ep.billable_minutes,
+            "torn_down": True,
+        }
+    except Exception as e:  # noqa: BLE001
+        emit("dedicated", {"status": "error", "model": model, "error": f"{type(e).__name__}: {str(e)[:300]}"})
+        return {"allowed": True, "model": model, "provisioned": ep is not None, "error": f"{type(e).__name__}: {str(e)[:300]}"}
+    finally:
+        if ep is not None:
+            ok = await client.delete(ep.endpoint_id)
+            emit(
+                "dedicated",
+                {
+                    "status": "deleted",
+                    "model": model,
+                    "name": ep.name,
+                    "ok": ok,
+                    "billable_minutes": ep.billable_minutes,
+                    "total_s": round(time.perf_counter() - t0),
+                },
+            )
+        await client.aclose()
+
+
 async def run_conformance(ctx: RunContext[StudioDeps], model: str | None = None) -> dict[str, Any]:
     """Run the 13-check conformance kit against Token Factory for one model: tools, structured output, streaming, prefix cache.
 
@@ -328,7 +444,7 @@ async def benchmark(
     return r
 
 
-STUDIO_TOOLS = [list_models, run_probe, run_coding_session, run_conformance, benchmark, web_search]
+STUDIO_TOOLS = [list_models, run_probe, run_coding_session, run_conformance, benchmark, provision_dedicated_endpoint, web_search]
 
 
 # ----------------------------------------------------------------------------- agent
@@ -374,7 +490,7 @@ SCENARIOS: list[dict[str, str]] = [
         "workload": "voice",
         "framework": "pydantic_ai",
         "budget_ms": "300",
-        "prompt": "We are building a real-time voice agent for customer support with Cartesia for speech and Token Factory for the LLM leg. The LLM must answer inside a 300 ms time-to-first-token budget. Prove tool calling works through PydanticAI with a real probe in the sandbox, list the served models, benchmark two fast candidates on a short customer-service reply (MiniMaxAI/MiniMax-M3.1-Flash and Qwen/Qwen3-30B-A3B-Instruct-2507 if served, else the two smallest instruct models), and recommend one. Say plainly if none meets the budget on the shared endpoint and what a dedicated endpoint would change.",
+        "prompt": "We are building a real-time voice agent for customer support with Cartesia for speech and Token Factory for the LLM leg. The LLM must answer inside a 300 ms time-to-first-token budget. Prove tool calling works through PydanticAI with a real probe in the sandbox, list the served models, benchmark two fast candidates on a short customer-service reply (MiniMaxAI/MiniMax-M3.1-Flash and Qwen/Qwen3-30B-A3B-Instruct-2507 if served, else the two smallest instruct models), and recommend one. If none meets the budget on the shared endpoint, provision a temporary dedicated endpoint for the best candidate, benchmark it there and tear it down; if that is not allowed, say what a dedicated endpoint would change and recommend it as the next step.",
         "blurb": "Latency budget, two benchmarks, a verified integration, a spoken verdict.",
     },
     {

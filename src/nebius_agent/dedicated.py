@@ -170,7 +170,9 @@ class DedicatedClient:
     async def _probe(self, ep: DedicatedEndpoint) -> bool:
         try:
             async with httpx.AsyncClient(base_url=ep.base_url, headers={"Authorization": f"Bearer {self.api_key}"}, timeout=30) as h:
-                r = await h.post("/chat/completions", json={"model": ep.routing_key, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1})
+                r = await h.post(
+                    "/chat/completions", json={"model": ep.routing_key, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}
+                )
                 return r.status_code == 200
         except httpx.HTTPError:
             return False
