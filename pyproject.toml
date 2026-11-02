@@ -18,12 +18,16 @@ dependencies = [
   "typer>=0.12",
   "rich>=13",
   "python-dotenv>=1.0",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "daytona>=0.20",
+  "cartesia>=2",
 ]
 
 [project.optional-dependencies]
-mock = ["fastapi>=0.110", "uvicorn>=0.29"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "fastapi>=0.110", "uvicorn>=0.29", "ruff>=0.5"]
-daytona = ["daytona>=0.20"]
+mock = []
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+daytona = []
 
 [project.scripts]
 nebius-agent = "nebius_agent.cli:app"
