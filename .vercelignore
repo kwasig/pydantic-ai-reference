@@ -11,3 +11,4 @@ docs/img
 *.zip
 *.bundle
 nebius_pydantic_ai_reference.egg-info
+.github
