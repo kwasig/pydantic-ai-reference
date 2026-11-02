@@ -24,7 +24,7 @@ and has not been run there.
 ## 1. Five-minute start
 
 ```bash
-git clone <this repo> && cd nebius-pydantic-ai-reference
+git clone https://github.com/kwasig/pydantic-ai-reference.git && cd pydantic-ai-reference
 make install                       # python3 -m venv .venv && pip install -e ".[dev]"
 cp .env.example .env               # add NEBIUS_API_KEY from https://tokenfactory.nebius.com
 . .venv/bin/activate
