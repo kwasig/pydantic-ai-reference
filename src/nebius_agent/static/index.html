@@ -3,293 +3,268 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nebius FDE Studio</title>
+<title>Nebius Integration Scout</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script src="/static/chart.umd.js"></script>
 <style>
-/* Layout: a console. Top status bar, a left rail to launch runs, a wide live timeline, a right rail for the result, voice and trace. */
+/* Brand tokens: swap these four for the official Nebius values and the whole page follows. */
 :root {
-  --bg:#0f1218; --panel:#161b24; --panel-2:#1c2230; --ink:#e9edf5; --muted:#8e98ad; --rule:#273042;
-  --accent:#7c9cff; --accent-soft:#1f2a4a; --good:#4cc38a; --warn:#e5b25c; --bad:#f06a6a; --nebius:#8fd3ff;
-  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --body:"Source Sans 3","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-  color-scheme: dark;
+  --brand: #3b5bff;            /* primary accent */
+  --brand-ink: #0b0f1a;        /* near-black for text */
+  --brand-paper: #ffffff;      /* surfaces */
+  --brand-tint: #eef1ff;       /* soft accent fill */
+  --bg: #f5f6f9; --panel: var(--brand-paper); --panel-2: #f8f9fc; --ink: var(--brand-ink); --muted: #5f6b85; --rule: #e3e7ef;
+  --accent: var(--brand); --accent-soft: var(--brand-tint); --good: #16895a; --good-soft: #e4f6ec; --warn: #a66a00; --warn-soft: #fff3dc; --bad: #c92a2a; --bad-soft: #ffe8e8;
+  --term-bg: #0f1422; --term-ink: #d7e1f5;
+  --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) { --bg:#f3f5f9; --panel:#ffffff; --panel-2:#f1f4fa; --ink:#151a24; --muted:#5b6478; --rule:#dde2ec; --accent:#2c4fd1; --accent-soft:#e6ecfd; --good:#1f8f5f; --warn:#a1620b; --bad:#c6383c; --nebius:#1e6fb0; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0d1017; --panel: #141926; --panel-2: #1a2030; --ink: #e8ecf5; --muted: #98a3bb; --rule: #27304a; --accent: #8aa0ff; --accent-soft: #1c2546; --good: #5fd39b; --good-soft: #15301f; --warn: #f0b95d; --warn-soft: #332a14; --bad: #ff7b7b; --bad-soft: #3a1c1c; color-scheme: dark; }
 }
-* { box-sizing:border-box }
-html,body { height:100% }
-body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 var(--body); }
-header { display:flex; align-items:center; gap:18px; padding:12px 20px; border-bottom:1px solid var(--rule); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap }
-.brand { font-family:var(--display); font-weight:700; font-size:20px; letter-spacing:-.01em }
-.brand small { font-family:var(--mono); font-weight:500; font-size:11px; color:var(--muted); margin-left:10px; letter-spacing:.08em; text-transform:uppercase }
-.pills { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto }
-.pill { display:inline-flex; align-items:center; gap:6px; font:500 12px var(--mono); padding:5px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--panel-2); color:var(--muted) }
-.pill .dot { width:8px; height:8px; border-radius:50%; background:var(--muted) }
-.pill.live .dot { background:var(--good) } .pill.mock .dot { background:var(--warn) } .pill.off .dot { background:var(--bad) }
-.pill.live, .pill.mock { color:var(--ink) }
-main { display:grid; grid-template-columns: 330px minmax(0,1fr) 380px; gap:16px; padding:16px 20px 40px; max-width:1680px; margin:0 auto }
-@media (max-width:1180px) { main { grid-template-columns: 300px minmax(0,1fr) } .right { grid-column: 1 / -1 } }
-@media (max-width:760px) { main { grid-template-columns: 1fr } }
-.panel { background:var(--panel); border:1px solid var(--rule); border-radius:10px; padding:16px; min-width:0 }
-h2 { font-family:var(--display); font-weight:500; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 12px }
-.scen { display:flex; flex-direction:column; gap:8px }
-.scen button { text-align:left; background:var(--panel-2); border:1px solid var(--rule); color:var(--ink); border-radius:8px; padding:10px 12px; cursor:pointer; font:inherit }
-.scen button:hover, .scen button.sel { border-color:var(--accent); background:var(--accent-soft) }
-.scen b { display:block; font-family:var(--display); font-weight:500; font-size:15px }
-.scen span { color:var(--muted); font-size:13px }
-textarea, select { width:100%; background:var(--panel-2); color:var(--ink); border:1px solid var(--rule); border-radius:8px; padding:10px; font:inherit; margin-top:10px }
-textarea { min-height:110px; resize:vertical }
-.run { margin-top:12px; width:100%; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:12px; font:600 15px var(--body); cursor:pointer }
-.run[disabled] { opacity:.5; cursor:wait }
-.stack { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px }
-.stack span { font:500 11px var(--mono); color:var(--muted); border:1px solid var(--rule); border-radius:6px; padding:3px 7px }
+* { box-sizing: border-box }
+html, body { height: 100% }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased }
+header { height: 60px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--rule); position: sticky; top: 0; z-index: 10 }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -.01em }
+.logo .mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--brand), #7c3aed); }
+.logo span.p { color: var(--muted); font-weight: 500 }
+.logo span.p::before { content: "/"; margin: 0 8px; color: var(--rule) }
+.status { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); padding: 5px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--rule) }
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block }
+.pill.live i { background: var(--good) } .pill.mock i { background: var(--warn) } .pill.off i { background: var(--bad) }
+main { display: grid; grid-template-columns: 360px minmax(0, 1fr) 420px; gap: 20px; padding: 20px 24px 40px; max-width: 1720px; margin: 0 auto }
+@media (max-width: 1240px) { main { grid-template-columns: 340px minmax(0, 1fr) } .col-r { grid-column: 1 / -1 } }
+@media (max-width: 800px) { main { grid-template-columns: 1fr } }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 18px; min-width: 0 }
+.card + .card { margin-top: 16px }
+h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 4px }
+.sub { color: var(--muted); margin: 0 0 16px }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
+label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 12px 0 5px }
+select, input, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 10px }
+textarea { min-height: 120px; resize: vertical; font-size: 13.5px }
+select:focus, input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px }
+.examples button { font: 500 12.5px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel-2); color: var(--ink); cursor: pointer }
+.examples button:hover, .examples button.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--accent) }
+.primary { width: 100%; margin-top: 14px; font: 600 15px var(--sans); color: #fff; background: var(--brand); border: 0; border-radius: 10px; padding: 12px; cursor: pointer }
+.primary:hover { filter: brightness(1.05) } .primary[disabled] { opacity: .55; cursor: wait }
+.hint { font-size: 12px; color: var(--muted); margin-top: 8px }
 /* timeline */
-.tl { display:flex; flex-direction:column; gap:10px; max-height: calc(100vh - 140px); overflow:auto; padding-right:4px }
-.step { background:var(--panel-2); border:1px solid var(--rule); border-radius:10px; padding:12px 14px; animation:in .18s ease-out }
-@keyframes in { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
-.step .hd { display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:500; font-size:15px }
-.step .hd .t { margin-left:auto; font:500 11px var(--mono); color:var(--muted) }
-.step .hd .ic { width:26px; height:26px; border-radius:7px; display:grid; place-items:center; font:600 11px var(--mono); background:var(--accent-soft); color:var(--accent) }
-.step.sandbox .ic { background:#1f3a2e; color:var(--good) } .step.conf .ic { background:#3a2f1f; color:var(--warn) } .step.bench .ic { background:#2a1f3a; color:#c9a6ff } .step.report .ic { background:var(--accent); color:#fff } .step.voice .ic { background:#1f3340; color:var(--nebius) } .step.err .ic { background:#3a1f1f; color:var(--bad) }
-.args { font:12.5px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; word-break:break-word }
-details { margin-top:6px } summary { cursor:pointer; color:var(--muted); font-size:13px }
-pre.json { font:12px/1.45 var(--mono); background:var(--bg); border:1px solid var(--rule); border-radius:8px; padding:10px; margin:6px 0 0; overflow:auto; max-height:260px }
-.term { font:12.5px/1.5 var(--mono); background:#0b0e13; color:#cfe3c8; border-radius:8px; padding:10px 12px; margin-top:8px; max-height:280px; overflow:auto; border:1px solid #1e2a22 }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .term { background:#0f1a14 } }
-.term .k { color:#8fd3ff } .term .ok { color:var(--good) } .term .no { color:var(--bad) }
-.checks { display:grid; grid-template-columns: 1fr auto auto; gap:4px 12px; font:12.5px var(--mono); margin-top:8px }
-.checks .b { font-weight:500; border-radius:5px; padding:0 7px; justify-self:start }
-.PASS { color:var(--good); background:#163726 } .PARTIAL { color:var(--warn); background:#3a2f1f } .FAIL { color:var(--bad); background:#3a1f1f }
-.spin { display:inline-block; width:12px; height:12px; border:2px solid var(--rule); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; margin-left:6px }
-@keyframes sp { to { transform:rotate(360deg) } }
-.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:14px } .kv dt { color:var(--muted); font:500 11px var(--mono); text-transform:uppercase; letter-spacing:.06em; padding-top:4px } .kv dd { margin:0 }
-.badge { display:inline-block; font:600 11px var(--mono); border-radius:6px; padding:2px 8px; letter-spacing:.04em }
-.badge.ok { background:#163726; color:var(--good) } .badge.no { background:#3a1f1f; color:var(--bad) }
-ul.tight { margin:6px 0 0; padding-left:18px } ul.tight li { margin:2px 0 }
-.right { display:flex; flex-direction:column; gap:16px }
-audio { width:100%; margin-top:8px }
-.btn { background:var(--panel-2); color:var(--ink); border:1px solid var(--rule); border-radius:8px; padding:8px 12px; font:600 13px var(--body); cursor:pointer }
-.spans { font:12px var(--mono); display:flex; flex-direction:column; gap:3px; max-height:320px; overflow:auto }
-.spans div { display:flex; gap:8px } .spans .n { color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .spans .d { margin-left:auto; color:var(--muted) }
-.empty { color:var(--muted); font-size:14px }
-canvas { max-height:220px }
-.usage { font:12px var(--mono); color:var(--muted); margin-top:8px }
-.muted { color:var(--muted) }
+.tl { display: flex; flex-direction: column; gap: 0; max-height: calc(100vh - 150px); overflow: auto; padding-right: 2px }
+.step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--rule); animation: in .18s ease-out }
+.step:last-child { border-bottom: 0 }
+@keyframes in { from { opacity: 0; transform: translateY(3px) } to { opacity: 1; transform: none } }
+.ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 11px var(--mono); background: var(--accent-soft); color: var(--accent) }
+.step.sandbox .ic { background: var(--good-soft); color: var(--good) } .step.conf .ic { background: var(--warn-soft); color: var(--warn) } .step.bench .ic { background: #efe7ff; color: #6d3fd1 } .step.report .ic { background: var(--brand); color: #fff } .step.err .ic { background: var(--bad-soft); color: var(--bad) }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .step.bench .ic { background: #2a1f45; color: #c4aaff } }
+.hd { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14.5px }
+.hd .t { margin-left: auto; font: 500 11.5px var(--mono); color: var(--muted); white-space: nowrap }
+.meta { font: 12.5px var(--mono); color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word }
+details { margin-top: 6px } summary { cursor: pointer; color: var(--muted); font-size: 12.5px }
+pre.json { font: 12px/1.45 var(--mono); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow: auto; max-height: 240px }
+.term { font: 12.5px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 10px 12px; margin-top: 8px; max-height: 240px; overflow: auto }
+.term .k { color: #8fd3ff } .term .ok { color: #7ee2a8 } .term .no { color: #ff8a8a }
+.checks { display: grid; grid-template-columns: auto auto 1fr; gap: 3px 12px; font: 12.5px var(--mono); margin-top: 8px; align-items: center }
+.b { font-weight: 600; border-radius: 5px; padding: 1px 7px; font-size: 11px; justify-self: start }
+.PASS { color: var(--good); background: var(--good-soft) } .PARTIAL { color: var(--warn); background: var(--warn-soft) } .FAIL { color: var(--bad); background: var(--bad-soft) }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: sp .8s linear infinite; margin-left: 8px; vertical-align: middle }
+@keyframes sp { to { transform: rotate(360deg) } }
+.badge { display: inline-block; font: 600 11px var(--sans); letter-spacing: .04em; border-radius: 6px; padding: 3px 8px }
+.badge.ok { background: var(--good-soft); color: var(--good) } .badge.no { background: var(--bad-soft); color: var(--bad) } .badge.warn { background: var(--warn-soft); color: var(--warn) }
+/* result */
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 }
+.kpi { background: var(--panel-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px }
+.kpi b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.01em } .kpi span { font-size: 11.5px; color: var(--muted) }
+ul.tight { margin: 4px 0 0; padding-left: 18px } ul.tight li { margin: 3px 0 }
+.model { font: 500 13px var(--mono); background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 6px; word-break: break-all }
+pre.code { font: 12px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 12px; overflow: auto; margin: 8px 0 0; max-height: 300px }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px }
+.btn { font: 600 13px var(--sans); color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; cursor: pointer }
+.btn:hover { border-color: var(--accent); color: var(--accent) }
+audio { width: 100%; margin-top: 8px }
+.spans { font: 12px var(--mono); display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto }
+.spans div { display: flex; gap: 8px } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) }
+.empty { color: var(--muted); font-size: 13.5px }
+.usage { font: 12px var(--mono); color: var(--muted); margin-top: 10px }
+canvas { max-height: 200px }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">Nebius FDE Studio <small>forward-deployed engineer in a box</small></div>
-  <div class="pills" id="pills"><span class="pill"><span class="dot"></span>checking services…</span></div>
+  <div class="logo"><span class="mark"></span>Nebius <span class="p">Integration Scout</span></div>
+  <div class="status" id="pills"><span class="pill"><i></i>checking services…</span></div>
 </header>
 
 <main>
-  <aside class="panel">
-    <h2>Scenario</h2>
-    <div class="scen" id="scen"></div>
-    <textarea id="prompt" placeholder="…or write the partner's ask in your own words"></textarea>
-    <select id="model"></select>
-    <button class="run" id="go">Run the agent</button>
-    <div class="stack"><span>Token Factory</span><span>PydanticAI</span><span>Daytona</span><span>Cartesia</span><span>Tavily</span><span>OpenTelemetry</span></div>
+  <aside>
+    <div class="card">
+      <h1>Describe your workload</h1>
+      <p class="sub">Get a verified, benchmarked integration on Token Factory you can ship, with a README and a spoken summary.</p>
+      <h2>Examples</h2>
+      <div class="examples" id="examples"></div>
+      <div class="row2">
+        <div><label for="workload">Workload</label><select id="workload"><option value="voice">Voice agent</option><option value="coding-agent">Coding agent</option><option value="chat">Support chat</option><option value="rag">RAG / search</option><option value="batch">Batch</option><option value="integration">Integration check</option></select></div>
+        <div><label for="framework">Framework</label><select id="framework"><option value="pydantic_ai">PydanticAI</option><option value="langgraph">LangGraph</option><option value="openai_sdk">OpenAI SDK</option></select></div>
+      </div>
+      <div class="row2">
+        <div><label for="budget">TTFT budget (ms)</label><input id="budget" type="number" placeholder="e.g. 300"></div>
+        <div><label for="volume">Volume (M tokens / month)</label><input id="volume" type="number" placeholder="optional"></div>
+      </div>
+      <label for="model">Model to evaluate</label><select id="model"></select>
+      <label for="prompt">Your ask, in your words</label>
+      <textarea id="prompt"></textarea>
+      <button class="primary" id="go">Run the scout</button>
+      <div class="hint">What runs: a real framework probe in a sandbox, the 12-check conformance kit, streaming benchmarks on your prompt, then a typed report spoken aloud.</div>
+    </div>
   </aside>
 
-  <section class="panel">
-    <h2>Live timeline</h2>
-    <div class="tl" id="tl"><div class="empty">Pick a scenario and run. Every tool call, sandbox line, check and benchmark shows up here as it happens.</div></div>
+  <section class="card">
+    <h2>What the agent is doing</h2>
+    <div class="tl" id="tl"><div class="empty">Choose an example or describe your workload, then run. Every tool call, sandbox line, check and benchmark appears here as it happens.</div></div>
   </section>
 
-  <aside class="right">
-    <div class="panel"><h2>Result</h2><div id="result" class="empty">No run yet.</div></div>
-    <div class="panel"><h2>Benchmarks</h2><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Benchmarks appear here as the agent measures models.</div></div>
-    <div class="panel"><h2>Voice</h2><div id="voice" class="empty">The agent speaks its summary at the end of a run (Cartesia Sonic, or your browser as a fallback).</div></div>
-    <div class="panel"><h2>Trace</h2><div id="trace" class="empty">OpenTelemetry spans (GenAI semantic conventions) for the last run.</div></div>
+  <aside class="col-r">
+    <div class="card"><h2>Integration plan</h2><div id="result" class="empty">The verdict, the model, the numbers, the code and the README land here.</div></div>
+    <div class="card"><h2>Measured on your prompt</h2><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Time to first token and tokens per second, per model.</div></div>
+    <div class="card"><h2>Spoken summary</h2><div id="voice" class="empty">Cartesia Sonic reads the 60-word verdict when the run finishes.</div></div>
+    <div class="card"><h2>Trace</h2><div id="trace" class="empty">OpenTelemetry spans (GenAI semantic conventions) for the run.</div></div>
   </aside>
 </main>
 
 <script>
-const $ = (s) => document.querySelector(s);
+const $ = s => document.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fmt = (o) => esc(JSON.stringify(o, null, 2));
-let selected = null, chart = null, benchRows = [], es = null;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = o => esc(JSON.stringify(o, null, 2));
+let chart = null, benchRows = [], es = null, current = {}, scenarios = [];
 
+function pill(state, text) { const p = el('span', `pill ${state}`); p.innerHTML = `<i></i>${esc(text)}`; return p; }
 async function status() {
-  const r = await fetch('/api/status').then(r => r.json());
-  const tf = r.token_factory;
-  const pills = [];
-  pills.push(pill(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', `Token Factory · ${tf.mock ? 'mock' : (tf.reachable ? 'live' : 'unreachable')} · ${tf.model.split('/').pop()}`));
-  pills.push(pill(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), `Daytona · ${r.daytona.configured ? 'sandbox' : (r.daytona.fallback_local ? 'local fallback' : 'off')}`));
-  pills.push(pill(r.cartesia.configured ? 'live' : 'mock', `Cartesia · ${r.cartesia.configured ? 'Sonic' : 'browser fallback'}`));
-  pills.push(pill(r.tavily.configured ? 'live' : 'off', `Tavily · ${r.tavily.configured ? 'on' : 'off'}`));
-  pills.push(pill(r.langfuse.configured ? 'live' : 'off', `Langfuse · ${r.langfuse.configured ? 'OTLP' : 'off'}`));
-  $('#pills').replaceChildren(...pills);
+  const r = await fetch('/api/status').then(r => r.json()); const tf = r.token_factory;
+  $('#pills').replaceChildren(
+    pill(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', `Token Factory · ${tf.mock ? 'mock' : (tf.reachable ? 'live' : 'unreachable')}`),
+    pill(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), `Daytona · ${r.daytona.configured ? 'sandbox' : (r.daytona.fallback_local ? 'local fallback' : 'off')}`),
+    pill(r.cartesia.configured ? 'live' : 'mock', `Cartesia · ${r.cartesia.configured ? 'Sonic' : 'browser fallback'}`),
+    pill(r.tavily.configured ? 'live' : 'off', `Tavily · ${r.tavily.configured ? 'on' : 'off'}`),
+    pill(r.langfuse.configured ? 'live' : 'off', `Langfuse · ${r.langfuse.configured ? 'OTLP' : 'off'}`));
 }
-function pill(state, text) { const p = el('span', `pill ${state}`); p.innerHTML = `<span class="dot"></span>${esc(text)}`; return p; }
-
 async function init() {
   status();
-  const sc = await fetch('/api/scenarios').then(r => r.json());
-  const box = $('#scen');
-  sc.forEach(s => {
-    const b = el('button', '', `<b>${esc(s.title)}</b><span>${esc(s.blurb)}</span>`);
-    b.onclick = () => { selected = s.id; $('#prompt').value = s.prompt; [...box.children].forEach(c => c.classList.remove('sel')); b.classList.add('sel'); };
-    box.appendChild(b);
-  });
-  box.children[0].click();
+  scenarios = await fetch('/api/scenarios').then(r => r.json());
+  const box = $('#examples');
+  scenarios.forEach(s => { const b = el('button', '', esc(s.title)); b.onclick = () => applyScenario(s, b); box.appendChild(b); });
   const m = await fetch('/api/models').then(r => r.json());
-  const sel = $('#model');
-  m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = id; if (id === m.default) o.selected = true; sel.appendChild(o); });
+  m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = id; if (id === m.default) o.selected = true; $('#model').appendChild(o); });
+  box.children[0].click();
   $('#go').onclick = start;
 }
-
+function applyScenario(s, b) {
+  [...$('#examples').children].forEach(c => c.classList.remove('sel')); b.classList.add('sel');
+  $('#workload').value = s.workload; $('#framework').value = s.framework; $('#budget').value = s.budget_ms || ''; $('#prompt').value = s.prompt;
+}
+function composePrompt() {
+  const w = $('#workload').value, f = $('#framework').selectedOptions[0].textContent, b = $('#budget').value, v = $('#volume').value, ask = $('#prompt').value.trim();
+  const ctx = `Context: workload=${w}; framework=${f}; model to evaluate=${$('#model').value}${b ? `; time-to-first-token budget=${b} ms` : ''}${v ? `; expected volume=${v}M tokens/month` : ''}.`;
+  return `${ask}\n\n${ctx}`;
+}
 async function start() {
-  $('#go').disabled = true;
+  $('#go').disabled = true; current = {}; benchRows = []; drawChart();
   $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Running…</span>'; $('#voice').innerHTML = '<span class="empty">…</span>'; $('#trace').innerHTML = '<span class="empty">…</span>';
-  benchRows = []; drawChart();
-  const body = { prompt: $('#prompt').value, model: $('#model').value };
-  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+  const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null };
+  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
   if (es) es.close();
   es = new EventSource(`/api/runs/${run_id}/events`);
-  const handlers = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, text, report, voice, trace, error, run_end };
-  Object.keys(handlers).forEach(k => es.addEventListener(k, e => handlers[k](JSON.parse(e.data))));
+  const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, text, report, voice, trace, error, run_end };
+  Object.keys(H).forEach(k => es.addEventListener(k, e => H[k](JSON.parse(e.data))));
   es.onerror = () => {};
 }
-
-const tl = () => $('#tl');
-let current = {};   // open step cards by key
 function step(cls, icon, title, key) {
   const s = el('div', `step ${cls}`);
-  s.innerHTML = `<div class="hd"><span class="ic">${icon}</span><span class="title">${esc(title)}</span><span class="t"></span></div>`;
-  tl().appendChild(s);
-  if (key) current[key] = s;
-  return s;
+  s.innerHTML = `<div class="ic">${icon}</div><div class="body"><div class="hd"><span>${esc(title)}</span><span class="t"></span></div></div>`;
+  $('#tl').appendChild(s); if (key) current[key] = s; $('#tl').scrollTop = $('#tl').scrollHeight; return s;
 }
+const body = s => s.querySelector('.body');
 const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)}s`; };
-
-function run_start(d) {
-  const s = step('', '▶', `Run started on ${d.mock ? 'the mock Token Factory' : 'Token Factory'} · ${d.model} · sandbox: ${d.sandbox}`);
-  stamp(s, d.t);
-  s.appendChild(el('div', 'args', esc(d.prompt)));
-}
-function tool_call(d) {
-  const s = step('', 'fn', `Agent calls ${d.tool}`, `tool:${d.call_id}`);
-  stamp(s, d.t);
-  s.appendChild(el('div', 'args', esc(JSON.stringify(d.args))));
-  s.appendChild(el('span', 'spin'));
-}
-function tool_result(d) {
-  const s = current[`tool:${d.call_id}`];
-  if (s) { s.querySelector('.spin')?.remove(); const det = el('details'); det.innerHTML = `<summary>result</summary><pre class="json">${fmt(d.result)}</pre>`; s.appendChild(det); stamp(s, d.t); }
-}
+function run_start(d) { const s = step('', '▶', `Scout started · ${d.mock ? 'mock Token Factory' : 'Token Factory'} · ${d.model.split('/').pop()} · sandbox: ${d.sandbox}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.prompt))); }
+function tool_call(d) { const s = step('', 'fn', `${d.tool}`, `tool:${d.call_id}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
+function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>raw result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }
 function sandbox(d) {
-  if (d.status === 'start') {
-    const s = step('sandbox', '⌘', `Sandbox (${d.backend}): running ${d.framework} probe against ${d.model}`, 'sandbox');
-    stamp(s, d.t);
-    s.appendChild(el('div', 'args', `files: ${d.files.join(', ')}`));
-    s.appendChild(el('div', 'term'));
-  } else {
-    const s = current['sandbox']; if (!s) return;
-    stamp(s, d.t);
-    const ok = d.tool_called;
-    const v = el('div', 'args');
-    v.innerHTML = `<span class="badge ${ok ? 'ok' : 'no'}">${ok ? 'TOOL CALL VERIFIED' : 'TOOL CALL NOT OBSERVED'}</span> exit=${d.exit_code} · probe ${d.probe_elapsed_ms ?? '–'} ms · sandbox ${Math.round(d.sandbox_elapsed_ms)} ms · ${esc(d.notes)}`
-      + (d.tool_args ? `<div>tool args from inside the framework: <code>${esc(JSON.stringify(d.tool_args))}</code></div>` : '')
-      + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
-    s.appendChild(v);
-  }
+  if (d.status === 'start') { const s = step('sandbox', '⌘', `Sandbox (${d.backend}) · ${d.framework} probe against ${d.model.split('/').pop()}`, 'sandbox'); stamp(s, d.t); body(s).appendChild(el('div', 'term')); return; }
+  const s = current['sandbox']; if (!s) return; stamp(s, d.t);
+  const v = el('div', 'meta');
+  v.innerHTML = `<span class="badge ${d.tool_called ? 'ok' : 'no'}">${d.tool_called ? 'Tool call verified inside the framework' : 'Tool call not observed'}</span>  exit ${d.exit_code} · probe ${d.probe_elapsed_ms ?? '–'} ms · sandbox ${Math.round(d.sandbox_elapsed_ms)} ms` + (d.tool_args ? `\nargs the framework passed: ${esc(JSON.stringify(d.tool_args))}` : '') + (d.notes ? `\n${esc(d.notes)}` : '') + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
+  body(s).appendChild(v);
 }
-function sandbox_log(d) {
-  const s = current['sandbox']; if (!s) return;
-  const t = s.querySelector('.term'); const line = el('div');
-  let txt = esc(d.line);
-  if (d.line.startsWith('PROBE_RESULT')) txt = `<span class="ok">${txt}</span>`; else if (/daytona:|local:/.test(d.line)) txt = `<span class="k">${txt}</span>`; else if (/error|Traceback|failed/i.test(d.line)) txt = `<span class="no">${txt}</span>`;
-  line.innerHTML = txt; t.appendChild(line); t.scrollTop = t.scrollHeight;
-}
+function sandbox_log(d) { const s = current['sandbox']; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); let x = esc(d.line); if (d.line.startsWith('PROBE_RESULT')) x = `<span class="ok">${x}</span>`; else if (/^(daytona|local):/.test(d.line)) x = `<span class="k">${x}</span>`; else if (/error|Traceback|failed/i.test(d.line)) x = `<span class="no">${x}</span>`; l.innerHTML = x; t.appendChild(l); t.scrollTop = t.scrollHeight; }
 function conformance(d) {
-  if (d.status === 'start') {
-    const s = step('conf', '✓', `Conformance kit: ${d.total} checks on ${d.model}`, 'conf'); stamp(s, d.t);
-    s.appendChild(el('div', 'checks'));
-  } else {
-    const s = current['conf']; if (!s) return; stamp(s, d.t);
-    s.appendChild(el('div', 'args', `<b>${d.passed} pass · ${d.partial} partial · ${d.failed} fail</b>${d.not_pass.length ? ' · ' + esc(d.not_pass.join(', ')) : ''}`));
-  }
+  if (d.status === 'start') { const s = step('conf', '✓', `Conformance kit · ${d.total} checks on ${d.model.split('/').pop()}`, 'conf'); stamp(s, d.t); body(s).appendChild(el('div', 'checks')); return; }
+  const s = current['conf']; if (!s) return; stamp(s, d.t); body(s).appendChild(el('div', 'meta', `<b>${d.passed} pass · ${d.partial} partial · ${d.failed} fail</b>${d.not_pass.length ? ' · ' + esc(d.not_pass.join(', ')) : ''}`));
 }
-function conformance_check(d) {
-  const s = current['conf']; if (!s) return;
-  const g = s.querySelector('.checks');
-  g.appendChild(el('span', '', esc(d.name)));
-  g.appendChild(el('span', `b ${d.status}`, d.status));
-  g.appendChild(el('span', 'muted', esc(d.detail).slice(0, 70)));
-}
+function conformance_check(d) { const g = current['conf']?.querySelector('.checks'); if (!g) return; g.appendChild(el('span', '', esc(d.name))); g.appendChild(el('span', `b ${d.status}`, d.status)); g.appendChild(el('span', '', `<span style="color:var(--muted)">${esc(d.detail).slice(0, 80)}</span>`)); }
 function benchmark(d) {
-  if (d.status === 'start') { const s = step('bench', '⏱', `Benchmarking ${d.model} (${d.runs} runs, streaming)`, `bench:${d.model}`); stamp(s, d.t); s.appendChild(el('span', 'spin')); }
-  else {
-    const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t);
-      s.appendChild(el('div', 'args', `TTFT <b>${d.ttft_ms} ms</b> · <b>${d.tokens_per_s} tok/s</b> · ${d.output_tokens} output tokens · prefix cache hit: ${d.cached_prompt_tokens} tokens`)); }
-    benchRows.push(d); drawChart();
-  }
+  if (d.status === 'start') { const s = step('bench', '⏱', `Benchmark · ${d.model.split('/').pop()} · ${d.runs} streamed runs`, `bench:${d.model}`); stamp(s, d.t); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
+  const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `TTFT <b>${d.ttft_ms} ms</b> · <b>${d.tokens_per_s} tok/s</b> · ${d.output_tokens} output tokens · prefix-cache hit ${d.cached_prompt_tokens} tokens on the repeat`)); }
+  benchRows.push(d); drawChart();
 }
-function text(d) { let s = current['text']; if (!s) { s = step('', '…', 'Agent', 'text'); s.appendChild(el('div', 'args')); } s.querySelector('.args').textContent += d.delta; }
+function text(d) { let s = current['text']; if (!s) { s = step('', '…', 'Agent', 'text'); body(s).appendChild(el('div', 'meta')); } body(s).querySelector('.meta').textContent += d.delta; }
 function report(d) {
   const r = d.report;
   const s = step('report', '★', r.title); stamp(s, d.t);
-  s.appendChild(el('div', 'args', `<span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'INTEGRATION VERIFIED' : 'NOT VERIFIED'}</span> · workload ${esc(r.workload)} · recommended <b>${esc(r.recommended_model)}</b>`));
-  const res = $('#result');
-  res.innerHTML = `
-    <div style="font-family:var(--display);font-size:18px;font-weight:700">${esc(r.title)}</div>
-    <div style="margin:6px 0 10px"><span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'INTEGRATION VERIFIED' : 'NOT VERIFIED'}</span></div>
-    <dl class="kv"><dt>Model</dt><dd>${esc(r.recommended_model)}</dd><dt>Workload</dt><dd>${esc(r.workload)}</dd>
-    ${r.conformance ? `<dt>Kit</dt><dd>${r.conformance.passed} pass · ${r.conformance.partial} partial · ${r.conformance.failed} fail<br><span class="muted">${esc(r.conformance.notes)}</span></dd>` : ''}
-    ${r.probes.length ? `<dt>Probes</dt><dd>${r.probes.map(p => `${esc(p.framework)} on ${esc(p.backend)}: ${p.tool_called ? '✅' : '❌'} ${esc(p.summary)}`).join('<br>')}</dd>` : ''}
-    </dl>
-    <h2 style="margin-top:12px">Findings</h2><ul class="tight">${r.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-    <h2 style="margin-top:12px">Next steps</h2><ul class="tight">${r.next_steps.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-    <div class="usage">usage: ${d.usage.requests} requests · ${d.usage.input_tokens} in · ${d.usage.output_tokens} out · cache read ${d.usage.cache_read_tokens}</div>`;
+  body(s).appendChild(el('div', 'meta', `<span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>  recommended ${esc(r.recommended_model)}`));
+  const best = (r.measurements || []).find(m => m.model === r.recommended_model) || (r.measurements || [])[0];
+  const budget = r.budget_ms ? `<span class="badge ${r.budget_met_measured ? 'ok' : (r.budget_met_measured === false ? 'warn' : '')}">${r.budget_met_measured ? `meets ${r.budget_ms} ms budget` : (r.budget_met_measured === false ? `misses ${r.budget_ms} ms budget on shared endpoint` : `${r.budget_ms} ms budget not measured`)}</span>` : '';
+  const conf = r.conformance ? `<div class="kpi"><b>${r.conformance.passed}/${r.conformance.passed + r.conformance.partial + r.conformance.failed}</b><span>checks pass${r.conformance.partial ? ` · ${r.conformance.partial} partial` : ''}${r.conformance.failed ? ` · ${r.conformance.failed} fail` : ''}</span></div>` : '';
+  const cost = r.cost ? `<p class="meta">≈ $${Number(r.cost.monthly_usd).toLocaleString()} / month at ${r.cost.monthly_tokens_m}M tokens (${esc(r.cost.assumed_split)})</p>` : '';
+  $('#result').innerHTML = `
+    <div style="font-size:17px;font-weight:700;letter-spacing:-.01em">${esc(r.title)}</div>
+    <div style="margin:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap"><span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>${budget}<span class="badge" style="background:var(--panel-2);color:var(--muted)">${esc(r.workload)}</span></div>
+    <div style="margin-top:8px">Model <span class="model">${esc(r.recommended_model)}</span></div>
+    <div class="kpis">
+      <div class="kpi"><b>${best ? best.ttft_ms : '–'}</b><span>ms to first token</span></div>
+      <div class="kpi"><b>${best ? best.tokens_per_s : '–'}</b><span>tokens / s per user</span></div>
+      ${conf || '<div class="kpi"><b>–</b><span>kit not run</span></div>'}
+    </div>
+    ${r.probes?.length ? `<div class="meta">${r.probes.map(p => `${p.tool_called ? '✔' : '✘'} ${esc(p.framework)} on ${esc(p.backend)} — ${esc(p.summary)}`).join('<br>')}</div>` : ''}
+    ${cost}
+    <h2 style="margin-top:14px">Findings</h2><ul class="tight">${(r.findings || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <h2 style="margin-top:14px">Next steps</h2><ul class="tight">${(r.next_steps || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <h2 style="margin-top:14px">Integration (${esc(r.framework_key)})</h2><pre class="code" id="snip">${esc(r.integration_snippet)}</pre>
+    <div class="btns"><button class="btn" id="copySnip">Copy code</button><button class="btn" id="dlReadme">Download README.md</button><button class="btn" id="copyReadme">Copy README</button></div>
+    <div class="usage">${d.usage.requests} model requests · ${d.usage.input_tokens} in · ${d.usage.output_tokens} out · ${d.usage.cache_read_tokens} cached</div>`;
+  $('#copySnip').onclick = () => copy(r.integration_snippet, $('#copySnip'));
+  $('#copyReadme').onclick = () => copy(r.readme_md, $('#copyReadme'));
+  $('#dlReadme').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.readme_md], { type: 'text/markdown' })); a.download = 'INTEGRATION.md'; a.click(); };
 }
+function copy(text, btn) { const done = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1200); }; (navigator.clipboard?.writeText(text) || Promise.reject()).then(done).catch(() => { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }); }
 function voice(d) {
-  if (d.status === 'start') { const s = step('voice', '♪', 'Speaking the summary', 'voice'); stamp(s, d.t); s.appendChild(el('div', 'args', `"${esc(d.text)}"`)); return; }
+  if (d.status === 'start') { const s = step('voice', '♪', 'Speaking the verdict', 'voice'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `“${esc(d.text)}”`)); return; }
   const s = current['voice']; if (s) stamp(s, d.t);
   const v = $('#voice');
-  if (d.mode === 'cartesia' && d.url) {
-    v.innerHTML = `<div><span class="badge ok">CARTESIA ${esc(d.model || '')}</span> <span class="muted">synthesised in ${Math.round(d.elapsed_ms)} ms</span></div><audio controls autoplay src="${d.url}"></audio><div class="args">"${esc(d.text)}"</div>`;
-  } else {
-    v.innerHTML = `<div><span class="badge no">BROWSER FALLBACK</span> <span class="muted">${esc(d.error || 'set CARTESIA_API_KEY for Sonic')}</span></div><div class="args">"${esc(d.text)}"</div><button class="btn" id="say" style="margin-top:8px">Play with browser voice</button>`;
-    const say = () => { try { const u = new SpeechSynthesisUtterance(d.text); speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {} };
-    $('#say').onclick = say; say();
-  }
+  if (d.mode === 'cartesia' && d.url) v.innerHTML = `<span class="badge ok">Cartesia ${esc(d.model || '')}</span> <span class="empty">synthesised in ${Math.round(d.elapsed_ms)} ms</span><audio controls autoplay src="${d.url}"></audio><p class="meta">“${esc(d.text)}”</p>`;
+  else { v.innerHTML = `<span class="badge warn">Browser voice</span> <span class="empty">${esc(d.error || 'set CARTESIA_API_KEY for Sonic')}</span><p class="meta">“${esc(d.text)}”</p><button class="btn" id="say">Play</button>`; const say = () => { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(d.text)); } catch (e) {} }; $('#say').onclick = say; say(); }
 }
 function trace(d) {
-  const t = $('#trace');
-  if (!d.spans.length) { t.innerHTML = '<span class="empty">no spans captured</span>'; return; }
+  const t = $('#trace'); if (!d.spans.length) { t.innerHTML = '<span class="empty">no spans captured</span>'; return; }
   const byId = {}; d.spans.forEach(s => byId[s.span_id] = s);
-  const depth = (s) => { let n = 0, p = s.parent_span_id; while (p && byId[p]) { n++; p = byId[p].parent_span_id; } return n; };
-  const rows = d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => {
-    const a = s.attributes || {}; const extra = a['gen_ai.tool.name'] || a['gen_ai.request.model'] || '';
-    return `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}${extra && !s.name.includes(extra) ? ' <span class="muted">' + esc(extra) + '</span>' : ''}</span><span class="d">${s.duration_ms} ms</span></div>`;
-  }).join('');
-  t.innerHTML = `<div class="muted" style="font-size:13px;margin-bottom:6px">${d.count} spans · OpenTelemetry · gen_ai.* attributes</div><div class="spans">${rows}</div>`;
+  const depth = s => { let n = 0, p = s.parent_span_id; while (p && byId[p]) { n++; p = byId[p].parent_span_id; } return n; };
+  t.innerHTML = `<div class="empty" style="margin-bottom:6px">${d.count} spans · gen_ai.* attributes</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
 }
-function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); s.appendChild(el('div', 'args', esc(d.message))); $('#result').innerHTML = `<span class="badge no">ERROR</span> <span class="muted">${esc(d.message)}</span>`; }
-function run_end(d) { const s = step('', '■', `Run ${d.status} in ${d.elapsed_s}s`); stamp(s, d.t); $('#go').disabled = false; es && es.close(); current = {}; }
-
+function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.message))); $('#result').innerHTML = `<span class="badge no">Error</span> <span class="empty">${esc(d.message)}</span>`; }
+function run_end(d) { const s = step('', '■', `Done in ${d.elapsed_s}s`); stamp(s, d.t); $('#go').disabled = false; es && es.close(); }
 function drawChart() {
-  if (typeof Chart === 'undefined') { $('#chartEmpty').textContent = benchRows.map(r => `${r.model}: TTFT ${r.ttft_ms} ms, ${r.tokens_per_s} tok/s`).join(' · ') || 'Benchmarks appear here as the agent measures models.'; return; }
-  const c = $('#chart'); $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block';
-  const labels = benchRows.map(r => r.model.split('/').pop());
-  const data = {
-    labels,
-    datasets: [
-      { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(124,156,255,.75)', yAxisID: 'y' },
-      { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(76,195,138,.75)', yAxisID: 'y1' },
-    ],
-  };
+  $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block';
+  if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${r.model}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }
   const ink = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
-  const opts = { responsive: true, animation: { duration: 250 }, plugins: { legend: { labels: { color: ink } } },
-    scales: { x: { ticks: { color: ink }, grid: { display: false } }, y: { position: 'left', title: { display: true, text: 'TTFT ms', color: ink }, ticks: { color: ink }, grid: { color: 'rgba(128,128,128,.15)' } },
-              y1: { position: 'right', title: { display: true, text: 'tok/s', color: ink }, ticks: { color: ink }, grid: { drawOnChartArea: false } } } };
-  if (chart) { chart.data = data; chart.update(); } else { chart = new Chart(c, { type: 'bar', data, options: opts }); }
+  const data = { labels: benchRows.map(r => r.model.split('/').pop()), datasets: [
+    { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(59,91,255,.75)', yAxisID: 'y' },
+    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(22,137,90,.7)', yAxisID: 'y1' } ] };
+  const options = { responsive: true, animation: { duration: 200 }, plugins: { legend: { labels: { color: ink, boxWidth: 10 } } }, scales: { x: { ticks: { color: ink }, grid: { display: false } }, y: { position: 'left', title: { display: true, text: 'ms', color: ink }, ticks: { color: ink }, grid: { color: 'rgba(128,128,128,.15)' } }, y1: { position: 'right', title: { display: true, text: 'tok/s', color: ink }, ticks: { color: ink }, grid: { drawOnChartArea: false } } } };
+  if (chart) { chart.data = data; chart.update(); } else { chart = new Chart($('#chart'), { type: 'bar', data, options }); }
 }
 init();
 </script>

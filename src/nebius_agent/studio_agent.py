@@ -240,27 +240,85 @@ def build_studio_agent(
 
 SCENARIOS: list[dict[str, str]] = [
     {
-        "id": "verify-pydantic-ai",
-        "title": "Verify PydanticAI on Token Factory",
-        "prompt": "A partner wants to ship a PydanticAI agent on Token Factory. Prove tool calling works through the framework with a real probe in the sandbox, run the conformance kit on the model, and benchmark it on a short support reply. Report what a partner README should say.",
-        "blurb": "Sandbox probe + 12-check kit + benchmark. The core FDE motion.",
+        "id": "voice-cartesia",
+        "title": "Voice agent · Cartesia + Token Factory",
+        "workload": "voice",
+        "framework": "pydantic_ai",
+        "budget_ms": "300",
+        "prompt": "We are building a real-time voice agent for customer support with Cartesia for speech and Token Factory for the LLM leg. The LLM must answer inside a 300 ms time-to-first-token budget. Prove tool calling works through PydanticAI with a real probe in the sandbox, list the served models, benchmark two plausible candidates on a short customer-service reply, and recommend one. Say plainly if none meets the budget on the shared endpoint and what a dedicated endpoint would change.",
+        "blurb": "Latency budget, two benchmarks, a verified integration, a spoken verdict.",
     },
     {
-        "id": "voice-model-choice",
-        "title": "Pick a model for a voice agent",
-        "prompt": "A voice-agent partner (think Cartesia Line) needs the LLM leg to answer inside a 300 ms time-to-first-token budget. List the served models, benchmark two plausible candidates on a short customer-service reply, and recommend one. Say plainly if none meets the budget on the shared endpoint.",
-        "blurb": "Two benchmarks, a latency budget, a recommendation you can speak.",
+        "id": "coding-daytona",
+        "title": "Coding agent · Daytona sandboxes",
+        "workload": "coding-agent",
+        "framework": "langgraph",
+        "budget_ms": "",
+        "prompt": "We run a coding agent that executes in Daytona sandboxes and makes dozens of sequential model calls per task, so tokens per second is what we feel. Run the langgraph probe and the pydantic_ai probe in the sandbox against the configured model, run the conformance kit, benchmark the model on a code-edit prompt, and tell us which framework to start with and what throughput to expect.",
+        "blurb": "Two real probes in a sandbox, throughput measured, one recommendation.",
     },
     {
-        "id": "framework-compare",
-        "title": "Compare LangGraph vs PydanticAI on one model",
-        "prompt": "Run the pydantic_ai probe and the langgraph probe in the sandbox against the same model. Tell me which frameworks' tool calling actually works on Token Factory, how long each took, and which one you'd recommend a coding-agent partner start with.",
-        "blurb": "Two real probes in Daytona, one verdict.",
+        "id": "migrate-support-bot",
+        "title": "Migrate a support bot from a closed API",
+        "workload": "chat",
+        "framework": "openai_sdk",
+        "budget_ms": "1000",
+        "prompt": "We are moving a customer-support chatbot off a closed API to open models on Token Factory. It uses the OpenAI SDK directly with one tool (order lookup) and needs structured JSON answers. Prove the raw OpenAI SDK tool call works, run the conformance kit to confirm json_schema output and streaming, benchmark the model on a support reply, and tell us what to change in our code.",
+        "blurb": "Wire-level proof, structured output checked, migration notes.",
     },
     {
-        "id": "new-model-readiness",
+        "id": "model-readiness",
         "title": "Is this model agent-ready?",
-        "prompt": "A new model just landed on Token Factory. Run the conformance kit on the configured model and summarise, check by check, what an agent builder can rely on (tools, parallel calls, json_schema output, streaming, prefix cache) and what to avoid.",
-        "blurb": "The report we hand a partner on day one.",
+        "workload": "integration",
+        "framework": "pydantic_ai",
+        "budget_ms": "",
+        "prompt": "A new model just landed on Token Factory. Run the conformance kit on the configured model and summarise, check by check, what an agent builder can rely on (tools, parallel calls, json_schema output, streaming, prefix cache) and what to avoid. Then run the pydantic_ai probe to confirm a framework round-trip.",
+        "blurb": "The day-one report for a new model.",
     },
 ]
+
+
+SNIPPETS: dict[str, str] = {
+    "pydantic_ai": '''from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+model = OpenAIChatModel(
+    "{model}",
+    provider=OpenAIProvider(base_url="{base_url}", api_key=NEBIUS_API_KEY),
+)
+agent = Agent(model, output_type=YourOutput, instructions="...")
+
+@agent.tool_plain
+def your_tool(arg: str) -> dict:
+    """What the tool does."""
+    ...
+
+result = await agent.run("...")   # tool calls, validation and typed output handled by PydanticAI''',
+    "langgraph": '''from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+llm = ChatOpenAI(model="{model}", base_url="{base_url}", api_key=NEBIUS_API_KEY, temperature=0)
+
+@tool
+def your_tool(arg: str) -> dict:
+    """What the tool does."""
+    ...
+
+agent = create_react_agent(llm, [your_tool])
+state = agent.invoke({{"messages": [("user", "...")]}})''',
+    "openai_sdk": """from openai import OpenAI
+
+client = OpenAI(base_url="{base_url}", api_key=NEBIUS_API_KEY)
+r = client.chat.completions.create(
+    model="{model}",
+    messages=[{{"role": "user", "content": "..."}}],
+    tools=[{{"type": "function", "function": {{"name": "your_tool", "parameters": {{...}}}}}}],
+)
+call = r.choices[0].message.tool_calls[0]   # run it, append a role="tool" message, call again""",
+}
+
+
+def integration_snippet(framework_key: str, model: str, base_url: str) -> str:
+    return SNIPPETS.get(framework_key, SNIPPETS["pydantic_ai"]).format(model=model, base_url=base_url)

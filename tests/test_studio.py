@@ -38,12 +38,20 @@ async def test_status_and_scenarios(studio):
     assert st["token_factory"]["reachable"] is True and st["token_factory"]["mock"] is True
     assert st["daytona"]["fallback_local"] is True
     sc = (await studio.get("/api/scenarios")).json()
-    assert any(s["id"] == "verify-pydantic-ai" for s in sc)
+    assert any(s["id"] == "voice-cartesia" for s in sc)
     assert (await studio.get("/")).status_code == 200
 
 
 async def test_full_run_streams_events_and_verifies_integration(studio):
-    run_id = (await studio.post("/api/runs", json={"scenario": "verify-pydantic-ai"})).json()["run_id"]
+    run_id = (
+        await studio.post(
+            "/api/runs",
+            json={
+                "prompt": "Prove the pydantic_ai probe works in the sandbox, run the conformance kit on the model, and benchmark it on a support reply within a 300 ms budget.",
+                "intake": {"workload": "voice", "framework": "pydantic_ai", "budget_ms": 300, "monthly_tokens_m": 500},
+            },
+        )
+    ).json()["run_id"]
     kinds: list[str] = []
     payloads: dict[str, list[dict]] = {}
     async with studio.stream("GET", f"/api/runs/{run_id}/events") as r:
@@ -61,6 +69,10 @@ async def test_full_run_streams_events_and_verifies_integration(studio):
     assert any(e["status"] == "done" and e["ttft_ms"] > 0 for e in payloads["benchmark"])
     report = payloads["report"][0]["report"]
     assert report["integration_verified"] is True and report["spoken_summary"]
+    assert "OpenAIChatModel" in report["integration_snippet"] and report["framework_key"] == "pydantic_ai"
+    assert report["budget_ms"] == 300 and report["budget_met_measured"] is True
+    assert report["readme_md"].startswith("# ") and "## Integration" in report["readme_md"]
+    assert report["cost"] is None  # pricing.json is empty on purpose
     voice = [e for e in payloads["voice"] if e["status"] == "done"][0]
     assert voice["mode"] in ("browser", "cartesia")
     assert payloads["trace"][0]["count"] >= 3

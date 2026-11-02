@@ -61,3 +61,5 @@ as a product.
 
 Not done here: the live run. `make live` on a machine with the keys does: models → conformance
 report → one traced agent run → the Studio with Daytona and Cartesia on.
+
+| 20 | Feedback: "make it Nebius-like, clean, and a real use case." | Reframed the Studio as **Integration Scout**: a partner describes the workload (type, framework, TTFT budget, volume) and gets an integration plan: verdict, model, measured numbers against the budget, the copy-paste snippet for their framework, a downloadable INTEGRATION.md, and a cost estimate if prices are configured. Light, clean UI with four brand tokens at the top of the stylesheet to swap for official values. Deliverables are derived from what was verified (which probe passed, which model was measured), never from the model's prose. Two more tests on the deliverables; 17 green. |
