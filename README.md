@@ -281,7 +281,7 @@ bash scripts/vercel_env.sh      # copies the keys from .env into the project (pr
 npx vercel --prod               # deploy; vercel.json sets maxDuration=800 and Vercel serves the FastAPI app from api/index.py
 ```
 
-After that every `git push` to `main` deploys if the project is connected to the GitHub repo in the Vercel dashboard.
+After that every `git push` to `main` deploys: either connect the repo to the project in the Vercel dashboard, or keep the included GitHub Actions workflow (`.github/workflows/vercel.yml`) and add `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` as repository secrets. The workflow only triggers the deploy; the runtime keys stay in the Vercel project environment.
 
 Vercel runs the app as a function with a per-request time limit set by the plan: **300 s on Hobby, 800 s on Pro**. Every scenario finishes in 1–3 minutes. The dedicated-endpoint run holds one request open for ~7.5 minutes (provision ≈ 5.5 min, warm-up, benchmark, delete), so it needs Pro. The repo is configured for Pro (`"maxDuration": 800`, `ALLOW_DEDICATED=1`), and provisioning only happens when the "Dedicated endpoint if needed" switch is on for a run; on Hobby set `maxDuration` to 300 and `VERCEL_ALLOW_DEDICATED=0` before running `scripts/vercel_env.sh`, and the scout recommends the dedicated endpoint as a next step instead.
 
