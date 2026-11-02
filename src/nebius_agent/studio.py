@@ -122,6 +122,8 @@ async def _replay(run: Run, name: str, speed: float = 2.0, max_gap: float = 1.5)
         kind = data.pop("kind")
         if kind == "run_start":
             data["replay"] = name
+            if d.get("services"):
+                data["services"] = d["services"]
         run.emit(kind, data)
     run.status = "done"
 
@@ -577,6 +579,7 @@ async def export_run(run_id: str, save_as: str | None = None) -> dict[str, Any]:
         "usage": run.usage,
         "audio": run.audio,
         "spans": run.spans,
+        "services": await status(),
     }
     if save_as:
         REPLAY_DIR.mkdir(parents=True, exist_ok=True)
