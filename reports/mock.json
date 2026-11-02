@@ -1,0 +1,139 @@
+{
+  "endpoint": "http://127.0.0.1:8008/v1/",
+  "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "ran_at": "2026-11-02T05:00:55.671705+00:00",
+  "python": "3.13.16",
+  "platform": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+  "summary": {
+    "pass": 12,
+    "partial": 0,
+    "fail": 0,
+    "total": 12
+  },
+  "results": [
+    {
+      "name": "chat.basic",
+      "status": "PASS",
+      "detail": "content='Mock Token Factory answer for: Reply wit'",
+      "evidence": {
+        "usage": {
+          "completion_tokens": 29,
+          "prompt_tokens": 8,
+          "total_tokens": 37,
+          "completion_tokens_details": null,
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        },
+        "finish_reason": "stop"
+      },
+      "ms": 45.6
+    },
+    {
+      "name": "usage.reported",
+      "status": "PASS",
+      "detail": "prompt=1 completion=23",
+      "evidence": {},
+      "ms": 2.9
+    },
+    {
+      "name": "tools.call_emitted",
+      "status": "PASS",
+      "detail": "get_weather({'city': 'mock get_weather city', 'unit': 'c'})",
+      "evidence": {
+        "finish_reason": "tool_calls",
+        "id": "call_c12efb66f2b1"
+      },
+      "ms": 3.7
+    },
+    {
+      "name": "tools.result_roundtrip",
+      "status": "PASS",
+      "detail": "final='Mock Token Factory answer for: What is the weather in Amsterdam? Use the get_wea'",
+      "evidence": {},
+      "ms": 6.7
+    },
+    {
+      "name": "tools.parallel",
+      "status": "PASS",
+      "detail": "2 calls in one turn: ['get_time', 'get_weather']",
+      "evidence": {},
+      "ms": 2.9
+    },
+    {
+      "name": "tools.choice_required",
+      "status": "PASS",
+      "detail": "1 call(s) with tool_choice=required",
+      "evidence": {},
+      "ms": 2.6
+    },
+    {
+      "name": "tools.choice_named",
+      "status": "PASS",
+      "detail": "called ['get_time']",
+      "evidence": {},
+      "ms": 3.5
+    },
+    {
+      "name": "structured.json_schema",
+      "status": "PASS",
+      "detail": "keys=['model', 'reasons', 'score']",
+      "evidence": {
+        "object": {
+          "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+          "score": 0,
+          "reasons": [
+            "mock reasons"
+          ]
+        }
+      },
+      "ms": 3.3
+    },
+    {
+      "name": "structured.json_object",
+      "status": "PASS",
+      "detail": "keys=['answer', 'ok']",
+      "evidence": {},
+      "ms": 2.8
+    },
+    {
+      "name": "streaming.text",
+      "status": "PASS",
+      "detail": "7 content chunks, finish=stop, ttft=6.9ms, usage_in_stream=True",
+      "evidence": {
+        "usage": {
+          "completion_tokens": 30,
+          "prompt_tokens": 8,
+          "total_tokens": 38,
+          "completion_tokens_details": null,
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "ms": 33.5
+    },
+    {
+      "name": "streaming.tool_call_deltas",
+      "status": "PASS",
+      "detail": "get_weather({'city': 'mock get_weather city', 'unit': 'c'}) finish=tool_calls",
+      "evidence": {},
+      "ms": 5.4
+    },
+    {
+      "name": "cache.cached_tokens",
+      "status": "PASS",
+      "detail": "second call cached_tokens=930 of prompt_tokens=937 (first=0)",
+      "evidence": {},
+      "ms": 6.6
+    }
+  ]
+}

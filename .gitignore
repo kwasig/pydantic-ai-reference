@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.env
+traces/*.jsonl
+!traces/sample-spans.jsonl
+reports/*.json
+!reports/mock.json
+.ruff_cache/

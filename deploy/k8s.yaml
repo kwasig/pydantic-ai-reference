@@ -1,0 +1,73 @@
+# The agent runtime on Nebius Managed Kubernetes.
+#
+#   kubectl create secret generic latency-scout-secrets \
+#       --from-literal=NEBIUS_API_KEY=... --from-literal=TAVILY_API_KEY=... \
+#       --from-literal=LANGFUSE_PUBLIC_KEY=... --from-literal=LANGFUSE_SECRET_KEY=...
+#   kubectl apply -f deploy/k8s.yaml
+#
+# What talks to what:
+#   this Deployment  -> Token Factory dedicated endpoint (model; latency SLA)   NEBIUS_BASE_URL / NEBIUS_MODEL
+#                    -> Tavily (search tool)                                    TAVILY_API_KEY
+#                    -> Daytona / ConTree sandbox (code tool)                   DAYTONA_API_KEY
+#                    -> Langfuse (OTLP traces), self-hosted on this cluster     LANGFUSE_HOST
+# The pods are stateless; scale replicas, not the agent.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: latency-scout-config
+data:
+  NEBIUS_BASE_URL: "https://api.tokenfactory.nebius.com/v1/"   # or your dedicated endpoint URL
+  NEBIUS_MODEL: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+  TRACE_EXPORTER: "otlp"
+  OTEL_SERVICE_NAME: "latency-scout"
+  LANGFUSE_HOST: "http://langfuse-web.observability.svc.cluster.local:3000"   # self-hosted Langfuse on the same cluster
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latency-scout
+  labels: { app: latency-scout }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: latency-scout }
+  template:
+    metadata:
+      labels: { app: latency-scout }
+    spec:
+      containers:
+        - name: agent
+          image: ghcr.io/<org>/nebius-latency-scout:0.1.0
+          ports: [{ containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: latency-scout-config }
+            - secretRef: { name: latency-scout-secrets }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: latency-scout
+spec:
+  selector: { app: latency-scout }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: latency-scout
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: latency-scout }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
