@@ -60,6 +60,12 @@ header { height: 60px; display: flex; align-items: center; gap: 14px; padding: 0
 .controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 6px 4px 11px }
 .controls select, .controls input { border: 0; background: transparent; color: var(--ink); font: 500 13px var(--sans); max-width: 210px; padding: 2px 4px }
 .controls input { width: 84px }
+.switch { cursor: pointer; user-select: none; gap: 8px !important } .switch input { position: absolute; opacity: 0; width: 0; height: 0 }
+.switch .track { width: 30px; height: 18px; border-radius: 999px; background: var(--rule); position: relative; transition: background .15s; flex: none }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2) }
+.switch input:checked + .track { background: var(--navy) } .switch input:checked + .track::after { transform: translateX(12px); background: var(--lime) }
+.switch input:focus-visible + .track { outline: 2px solid var(--blue); outline-offset: 2px }
+.switch.off { opacity: .45; cursor: not-allowed }
 .controls .go { margin-left: auto; background: var(--navy); color: #fff; border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s }
 .controls .go:hover { background: var(--lime); color: var(--navy) }
 .controls .go[disabled] { opacity: .5; cursor: wait }
@@ -160,6 +166,7 @@ canvas { max-height: 190px; display: none } canvas.has { display: block }
       <label>Model <select id="model"></select></label>
       <label>First token ≤ <input id="budget" type="number" placeholder="ms"></label>
       <label>Volume <input id="volume" type="number" placeholder="M tok/mo"></label>
+      <label class="switch" id="dedWrap" title="If nothing meets your latency budget on the shared endpoint, the scout may provision a temporary dedicated endpoint (about 6 minutes, a few GPU-minutes billed) and delete it afterwards"><input type="checkbox" id="dedicated"><span class="track"></span>Dedicated endpoint if needed</label>
       <button class="go" id="go">Run the scout</button>
     </div>
   </div>
@@ -198,7 +205,8 @@ async function status(snapshot) {
     svc(r.cartesia.configured ? 'live' : 'mock', 'Cartesia', r.cartesia.configured ? 'Sonic' : 'browser voice'),
     svc(r.langfuse.configured ? 'live' : 'off', 'Langfuse', r.langfuse.configured ? 'tracing' : 'off'),
     svc(r.tavily.configured ? 'live' : 'off', 'Tavily', r.tavily.configured ? 'search' : 'off'),
-    svc(r.dedicated && r.dedicated.allowed ? 'live' : 'off', 'Dedicated', r.dedicated && r.dedicated.allowed ? 'can provision' : 'off'));
+    svc(r.dedicated && r.dedicated.allowed ? 'live' : 'off', 'Dedicated', r.dedicated && r.dedicated.allowed ? 'available' : 'off'));
+  if (!snapshot) { const ok = !!(r.dedicated && r.dedicated.allowed); $('#dedWrap').classList.toggle('off', !ok); $('#dedicated').disabled = !ok; if (!ok) $('#dedWrap').title = 'Not enabled on this server (set ALLOW_DEDICATED=1)'; }
   if (!snapshot) loadLangfuse();
 }
 async function init() {
@@ -235,10 +243,10 @@ async function start(replay, replayTitle) {
   $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Waiting for the verdict.</span>'; $('#trace').innerHTML = '<span class="empty">Spans arrive when the run ends.</span>';
   const sel = $('#examples .sel');
   $('#barWhat').textContent = replay ? (replayTitle || 'Recorded run') : (sel ? sel.querySelector('b').textContent : 'Custom ask');
-  $('#barCtx').textContent = replay ? 'replaying a recorded live run' : `${$('#framework').selectedOptions[0].textContent} · ${short($('#model').value)}${$('#budget').value ? ` · first token ≤ ${$('#budget').value} ms` : ''}`;
+  $('#barCtx').textContent = replay ? 'replaying a recorded live run' : `${$('#framework').selectedOptions[0].textContent} · ${short($('#model').value)}${$('#budget').value ? ` · first token ≤ ${$('#budget').value} ms` : ''}${$('#dedicated').checked ? ' · dedicated endpoint allowed' : ''}`;
   document.body.classList.add('running'); window.scrollTo(0, 0);
   runStart = Date.now(); clearInterval(clock); clock = setInterval(() => { $('#runClock').textContent = `${((Date.now() - runStart) / 1000).toFixed(0)} s`; }, 500);
-  const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null };
+  const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null, allow_dedicated: $('#dedicated').checked };
   const payload = JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake });
   const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, dedicated, dedicated_log, text, report, voice, trace, error, run_end };
   if (stateless) { streamPost(payload, H); return; }

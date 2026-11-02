@@ -58,6 +58,7 @@ class Intake(BaseModel):
     budget_ms: int | None = None
     monthly_tokens_m: float | None = None
     partner: str | None = None
+    allow_dedicated: bool = False  # per-run opt-in; also needs ALLOW_DEDICATED=1 on the server
 
 
 class StartRun(BaseModel):
@@ -166,6 +167,7 @@ async def _execute(run: Run, settings: Settings) -> None:
         exporter = "memory+otlp" if langfuse_configured() else "memory"
         agent = build_studio_agent(settings, settings.model, instrument=True, trace_exporter=exporter)
         deps = build_studio_deps(settings, emit=run.emit, eval_model=run.model)
+        deps.allow_dedicated = bool(run.intake.get("allow_dedicated"))
 
         def save_artifact(name: str, data: bytes) -> str:
             if STATELESS:  # another instance may answer the next request: ship the bytes inline
@@ -462,7 +464,7 @@ async def status() -> dict[str, Any]:
         "cartesia": {"configured": bool(os.getenv("CARTESIA_API_KEY"))},
         "tavily": {"configured": bool(s.tavily_api_key)},
         "langfuse": {"configured": langfuse_configured(), "host": langfuse_host()},
-        "dedicated": {"allowed": dedicated_allowed() and not STATELESS},
+        "dedicated": {"allowed": dedicated_allowed()},
         "stateless": STATELESS,
         "trace_exporter": s.trace_exporter,
     }

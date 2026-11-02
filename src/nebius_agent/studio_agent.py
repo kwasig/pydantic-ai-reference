@@ -39,6 +39,7 @@ class StudioDeps(Deps):
     emit: LogFn = field(default=lambda kind, data: None)
     eval_model: str | None = None  # the model the partner asked about; tools default to it
     save_artifact: Callable[[str, bytes], str] | None = None  # (name, bytes) -> url, provided by the Studio
+    allow_dedicated: bool = False  # the partner ticked "dedicated endpoint if needed" for this run
 
 
 # ----------------------------------------------------------------------------- output
@@ -94,7 +95,8 @@ Tools, and when to use them:
   coding agents, or any latency question. Benchmark two candidates when choosing.
 - provision_dedicated_endpoint: when no model meets the partner's latency budget on the shared
   endpoint, provision a temporary dedicated endpoint for the best candidate, benchmark it there, and
-  tear it down. It refuses unless the operator allowed it; then recommend it as a next step instead.
+  tear it down. It refuses unless the partner allowed it for this run; then recommend it as a next
+  step instead and do not call it again.
 - web_search: live facts from the web via Tavily, only when the ask needs them.
 
 Rules:
@@ -293,15 +295,18 @@ async def provision_dedicated_endpoint(
     s = ctx.deps.settings
     model = await _served_model(ctx, model)
     emit = ctx.deps.emit
-    if not dedicated_allowed() or s.is_mock or not s.api_key:
-        emit(
-            "dedicated",
-            {"status": "skipped", "model": model, "reason": "ALLOW_DEDICATED is not set" if not s.is_mock else "mock Token Factory"},
-        )
+    if not dedicated_allowed() or s.is_mock or not s.api_key or not ctx.deps.allow_dedicated:
+        if s.is_mock:
+            reason = "mock Token Factory"
+        elif not dedicated_allowed():
+            reason = "ALLOW_DEDICATED is not set on the server"
+        else:
+            reason = "not allowed for this run; the switch next to Run the scout enables it"
+        emit("dedicated", {"status": "skipped", "model": model, "reason": reason})
         return {
             "allowed": False,
             "model": model,
-            "reason": "dedicated endpoints are not enabled for this run; recommend one as a next step",
+            "reason": "dedicated endpoints are not enabled for this run; recommend one as a next step and do not call this tool again",
         }
 
     client = DedicatedClient(s.api_key)
