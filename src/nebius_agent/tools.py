@@ -41,9 +41,19 @@ class Deps:
 
 class BenchmarkResult(BaseModel):
     model: str
-    ttft_ms: float = Field(description="Time to first streamed token, milliseconds (median of runs)")
-    tokens_per_s: float = Field(description="Decode throughput for one user, output tokens per second (median)")
+    ttft_ms: float = Field(description="Time to first streamed token (reasoning or content), milliseconds, median of runs")
+    tokens_per_s: float = Field(description="Decode rate after the first token: completion tokens / (total - ttft), median")
+    end_to_end_tokens_per_s: float = Field(default=0.0, description="completion tokens / total wall time, what a user actually experiences")
+    total_ms: float = Field(default=0.0, description="Wall time of one request, median")
     output_tokens: int
+    reasoning_tokens: int = Field(default=0, description="completion_tokens_details.reasoning_tokens when the server reports it")
+    content_chunks: int = Field(
+        default=0, description="streamed content deltas per run; a handful for 100+ tokens means the server buffered"
+    )
+    reasoning_chunks: int = Field(default=0)
+    stream_note: str = Field(
+        default="", description="e.g. 'bursty: content arrived in 2 chunks' or 'reasoning model: 160 of 200 tokens were reasoning'"
+    )
     cached_prompt_tokens: int = Field(default=0, description="prompt_tokens_details.cached_tokens reported by the server")
     runs: int
 
@@ -82,8 +92,13 @@ async def benchmark_model(
     runs = max(1, min(runs, 5))
     ttfts: list[float] = []
     tps: list[float] = []
+    e2e: list[float] = []
+    totals: list[float] = []
     out_tokens = 0
+    reasoning_tokens = 0
     cached = 0
+    content_chunks = 0
+    reasoning_chunks = 0
     # a stable, long-ish system prompt so the second run can hit Token Factory's prefix cache
     system = (
         "You are a concise technical writer for Nebius Token Factory partners. "
@@ -100,27 +115,57 @@ async def benchmark_model(
             stream=True,
             stream_options={"include_usage": True},
         )
+        cc = rc = 0
         async for chunk in stream:
             if chunk.usage:
                 out_tokens = chunk.usage.completion_tokens or out_tokens
                 details = getattr(chunk.usage, "prompt_tokens_details", None)
                 if details is not None and getattr(details, "cached_tokens", None):
                     cached = details.cached_tokens
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                if first is None:
-                    first = time.perf_counter() - t0
-                n += 1
+                cdet = getattr(chunk.usage, "completion_tokens_details", None)
+                if cdet is not None and getattr(cdet, "reasoning_tokens", None):
+                    reasoning_tokens = cdet.reasoning_tokens
+            if chunk.choices and chunk.choices[0].delta:
+                delta = chunk.choices[0].delta
+                # reasoning models stream `reasoning_content` before `content`; both are generated tokens
+                reasoning = getattr(delta, "reasoning_content", None) or (delta.model_extra or {}).get("reasoning_content")
+                if delta.content or reasoning:
+                    if first is None:
+                        first = time.perf_counter() - t0
+                    n += 1
+                    if delta.content:
+                        cc += 1
+                    else:
+                        rc += 1
         total = time.perf_counter() - t0
         ttfts.append((first or total) * 1000)
+        totals.append(total * 1000)
         decode = max(1e-6, total - (first or 0.0))
         tps.append((out_tokens or n) / decode)
+        e2e.append((out_tokens or n) / max(1e-6, total))
+        content_chunks, reasoning_chunks = cc, rc
     ttfts.sort()
     tps.sort()
+    e2e.sort()
+    totals.sort()
+    notes = []
+    if out_tokens >= 40 and content_chunks + reasoning_chunks <= max(3, out_tokens // 25):
+        notes.append(f"bursty: {out_tokens} tokens arrived in {content_chunks + reasoning_chunks} chunks, decode rate is not meaningful")
+    if reasoning_chunks and not reasoning_tokens:
+        notes.append(f"reasoning model: {reasoning_chunks} reasoning deltas before the first content delta")
+    elif reasoning_tokens:
+        notes.append(f"reasoning model: {reasoning_tokens} of {out_tokens} tokens were reasoning")
     return BenchmarkResult(
         model=model,
         ttft_ms=round(ttfts[len(ttfts) // 2], 1),
         tokens_per_s=round(tps[len(tps) // 2], 1),
+        end_to_end_tokens_per_s=round(e2e[len(e2e) // 2], 1),
+        total_ms=round(totals[len(totals) // 2], 1),
         output_tokens=out_tokens,
+        reasoning_tokens=reasoning_tokens,
+        content_chunks=content_chunks,
+        reasoning_chunks=reasoning_chunks,
+        stream_note="; ".join(notes),
         cached_prompt_tokens=cached,
         runs=runs,
     )

@@ -50,6 +50,14 @@ PROBES: dict[str, Probe] = {
         command="python openai_sdk_probe.py",
         notes="the wire-level baseline every framework sits on",
     ),
+    "coding_session": Probe(
+        key="coding_session",
+        framework="Coding-agent session (PydanticAI, files + shell)",
+        file="coding_agent_probe.py",
+        install="pip install -q 'pydantic-ai-slim[openai]>=2.60' pytest matplotlib",
+        command="python coding_agent_probe.py",
+        notes="the agent writes a module and tests, runs pytest to green, renders a chart; everything happens inside the sandbox",
+    ),
     "langgraph": Probe(
         key="langgraph",
         framework="LangGraph (create_react_agent)",
