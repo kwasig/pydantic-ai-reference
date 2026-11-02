@@ -40,6 +40,7 @@ from .voice import synthesize
 
 STATIC = Path(__file__).parent / "static"
 AUDIO_DIR = Path(os.getenv("STUDIO_AUDIO_DIR", "audio"))
+ARTIFACT_DIR = Path(os.getenv("STUDIO_ARTIFACT_DIR", "artifacts"))
 
 
 class Intake(BaseModel):
@@ -77,6 +78,7 @@ class Run:
     spans: list[dict[str, Any]] = field(default_factory=list)
     trace_id: str | None = None
     langfuse: dict[str, Any] | None = None
+    artifacts: list[str] = field(default_factory=list)
 
     def emit(self, kind: str, data: dict[str, Any] | None = None) -> None:
         ev = {"seq": len(self.events), "t": round(time.time() - self.started, 3), "kind": kind, **(data or {})}
@@ -154,6 +156,15 @@ async def _execute(run: Run, settings: Settings) -> None:
         exporter = "memory+otlp" if langfuse_configured() else "memory"
         agent = build_studio_agent(settings, settings.model, instrument=True, trace_exporter=exporter)
         deps = build_studio_deps(settings, emit=run.emit, eval_model=run.model)
+
+        def save_artifact(name: str, data: bytes) -> str:
+            ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+            fname = f"{run.id}-{Path(name).name}"
+            (ARTIFACT_DIR / fname).write_bytes(data)
+            run.artifacts.append(fname)
+            return f"/artifacts/{fname}"
+
+        deps.save_artifact = save_artifact
     except Exception as e:  # noqa: BLE001 - setup failures must still end the stream
         run.status, run.error = "error", f"{type(e).__name__}: {str(e)[:500]}"
         run.emit("error", {"message": run.error})
@@ -589,6 +600,9 @@ async def export_run(run_id: str, save_as: str | None = None) -> dict[str, Any]:
         audio_path = AUDIO_DIR / Path(audio_url).name if audio_url else None
         if audio_path and audio_path.exists():
             shutil.copy(audio_path, REPLAY_DIR / audio_path.name)
+        for fname in run.artifacts:
+            if (ARTIFACT_DIR / fname).exists():
+                shutil.copy(ARTIFACT_DIR / fname, REPLAY_DIR / fname)
         doc["saved"] = str(REPLAY_DIR / f"{name}.json")
     return doc
 
@@ -634,6 +648,16 @@ async def run_events(run_id: str, since: int = 0) -> StreamingResponse:
                 yield b": keepalive\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/artifacts/{name}")
+async def artifact(name: str) -> FileResponse:
+    p = ARTIFACT_DIR / Path(name).name
+    if not p.exists():
+        p = REPLAY_DIR / Path(name).name
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p)
 
 
 @app.get("/audio/{name}")

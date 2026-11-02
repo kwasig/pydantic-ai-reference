@@ -54,7 +54,7 @@ header { height: 60px; display: flex; align-items: center; gap: 14px; padding: 0
 .tile.sel { border-color: var(--navy); background: var(--panel); box-shadow: inset 0 0 0 1px var(--navy) }
 .tile.sel b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--lime); border: 1px solid var(--navy); margin-right: 7px; vertical-align: 1px }
 .composer { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--rule) }
-.composer textarea { width: 100%; border: 0; background: transparent; color: var(--ink); font: 15px/1.55 var(--sans); padding: 18px 20px 8px; min-height: 128px; resize: vertical; display: block }
+.composer textarea { width: 100%; border: 0; background: transparent; color: var(--ink); font: 15px/1.55 var(--sans); padding: 18px 20px 8px; min-height: 128px; max-height: 60vh; resize: none; display: block; overflow: auto }
 .composer textarea:focus-visible { outline: none }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px 14px; border-top: 1px solid var(--rule) }
 .controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 6px 4px 11px }
@@ -101,6 +101,12 @@ details { margin-top: 6px } summary { cursor: pointer; color: var(--muted); font
 pre.json { font: 11.5px/1.45 var(--mono); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow: auto; max-height: 220px; color: var(--ink-2) }
 .term { font: 12.5px/1.55 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 10px; padding: 12px 14px; margin-top: 8px; max-height: 260px; overflow: auto }
 .term .k { color: #8fd3ff } .term .ok { color: #e0ff4f } .term .no { color: #ff8a8a }
+.acts { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 }
+.act { display: grid; grid-template-columns: 18px 18px minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink-2) }
+.act .n { font: 11px var(--mono); color: var(--muted) } .act .ic { color: var(--muted) } .act.bad .ic { color: var(--bad) }
+.act code { font: 12px var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px } .act small { color: var(--muted); font-size: 11.5px; margin-left: 4px }
+figure.chart { margin: 10px 0 4px; background: #fff; border: 1px solid var(--rule); border-radius: 10px; padding: 8px } figure.chart img { width: 100%; max-height: 260px; object-fit: contain; display: block } figure.chart figcaption { font-size: 11.5px; color: var(--muted); margin-top: 6px }
+.why { font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--lime); padding-left: 10px; margin-top: 10px }
 .checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-top: 8px }
 .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; min-width: 0 }
 .check .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
@@ -130,7 +136,7 @@ pre.code { font: 12px/1.5 var(--mono); background: var(--term-bg); color: var(--
 .tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; font-weight: 500; font-size: 13px; color: var(--muted); cursor: pointer; margin-bottom: -1px }
 .tabs button.on { color: var(--ink); border-bottom-color: var(--navy) }
 .tab { display: none; padding-top: 12px } .tab.on { display: block }
-canvas { max-height: 190px }
+canvas { max-height: 190px; display: none } canvas.has { display: block }
 .spans { font: 12px var(--mono); display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow: auto }
 .spans div { display: flex; gap: 8px } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) } .spans a { color: var(--blue); text-decoration: none } .spans a:hover { text-decoration: underline }
 .usage { font-size: 12px; color: var(--muted); margin-top: 10px }
@@ -180,7 +186,7 @@ const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = o => esc(JSON.stringify(o, null, 2));
 const short = m => String(m || '').split('/').pop();
-let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0;
+let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0, sessionChart = null;
 
 function svc(state, name, text) { const p = el('span', state); p.innerHTML = `<i></i>${esc(name)}<span class="label"> ${esc(text)}</span>`; p.title = `${name}: ${text}`; return p; }
 async function status(snapshot) {
@@ -202,6 +208,7 @@ async function init() {
   m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = short(id); o.title = id; if (id === m.default) o.selected = true; $('#model').appendChild(o); });
   box.children[0].click();
   $('#go').onclick = () => start();
+  $('#prompt').addEventListener('input', grow); grow();
   $('#edit').onclick = () => { document.body.classList.remove('running'); window.scrollTo(0, 0); };
   $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('#tabs').children].forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === `tab-${b.dataset.tab}`)); if (chart) chart.resize(); };
   const rl = await fetch('/api/runs').then(r => r.json()).catch(() => ({ replays: [] }));
@@ -210,9 +217,10 @@ async function init() {
     rl.replays.forEach(r => { const sc = scenarios.find(s => s.id === r.name); const label = sc ? sc.title.split(' · ')[0] : r.name; const b = el('button', '', `▶ ${esc(label)}`); b.title = `${r.model}, recorded ${(r.recorded_at || '').slice(0, 10)}`; b.onclick = () => start(r.name, label); wrap.appendChild(b); });
   }
 }
+function grow() { const t = $('#prompt'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight + 2, window.innerHeight * 0.6) + 'px'; }
 function applyScenario(s, b) {
   [...$('#examples').children].forEach(c => c.classList.remove('sel')); b.classList.add('sel');
-  $('#workload').value = s.workload; $('#framework').value = s.framework; $('#budget').value = s.budget_ms || ''; $('#prompt').value = s.prompt;
+  $('#workload').value = s.workload; $('#framework').value = s.framework; $('#budget').value = s.budget_ms || ''; $('#prompt').value = s.prompt; grow();
   if (s.model && [...$('#model').options].some(o => o.value === s.model)) $('#model').value = s.model;
 }
 function composePrompt() {
@@ -221,7 +229,7 @@ function composePrompt() {
   return `${ask}\n\n${ctx}`;
 }
 async function start(replay, replayTitle) {
-  $('#go').disabled = true; current = {}; benchRows = []; drawChart();
+  $('#go').disabled = true; current = {}; benchRows = []; sessionChart = null; drawChart();
   $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Waiting for the verdict.</span>'; $('#trace').innerHTML = '<span class="empty">Spans arrive when the run ends.</span>';
   const sel = $('#examples .sel');
   $('#barWhat').textContent = replay ? (replayTitle || 'Recorded run') : (sel ? sel.querySelector('b').textContent : 'Custom ask');
@@ -251,11 +259,26 @@ function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return
 const sbKey = d => `sandbox:${d.probe || d.framework || 'last'}`;
 let lastSandbox = null;
 function sandbox(d) {
-  if (d.status === 'start') { const s = step('sandbox', '▶', `${d.framework} probe in a ${d.backend} sandbox against ${short(d.model)}`, sbKey(d)); lastSandbox = s; stamp(s, d.t); body(s).appendChild(el('div', 'term')); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
+  if (d.status === 'start') { const title = d.probe === 'coding_session' ? `Coding agent working in a ${d.backend} sandbox on ${short(d.model)}` : `${d.framework} probe in a ${d.backend} sandbox against ${short(d.model)}`; const s = step('sandbox', '▶', title, sbKey(d)); lastSandbox = s; stamp(s, d.t); body(s).appendChild(el('div', 'term')); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
   const s = current[sbKey(d)] || lastSandbox; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t);
+  if (d.probe === 'coding_session' || d.framework_key === 'coding_session') { sessionChart = d.chart_url || sessionChart; renderSession(s, d); return; }
   const v = el('div', 'meta');
   v.innerHTML = `<span class="badge ${d.tool_called ? 'ok' : 'no'}">${d.tool_called ? 'Tool call verified inside the framework' : 'Tool call not observed'}</span>  exit ${d.exit_code}, probe ${d.probe_elapsed_ms ?? '–'} ms, sandbox ${Math.round(d.sandbox_elapsed_ms / 1000)} s` + (d.tool_args ? `\nArguments the framework passed: ${esc(JSON.stringify(d.tool_args))}` : '') + (d.notes ? `\n${esc(d.notes)}` : '') + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
   body(s).appendChild(v);
+}
+function renderSession(s, d) {
+  const t = d.tests || {};
+  const verdict = d.tests_passed ? `<span class="badge ok">${t.passed} tests pass, verified by running pytest again</span>` : `<span class="badge ${t.ran ? 'no' : 'warn'}">${t.ran ? `${t.failed} failing, ${t.passed} passing` : 'tests did not run'}</span>`;
+  const rows = (d.steps || []).map((st, i) => st.tool === 'write_file'
+    ? `<div class="act"><span class="n">${i + 1}</span><span class="ic">✎</span><span class="w">wrote <code>${esc(st.path)}</code> <small>${st.bytes} bytes</small></span></div>`
+    : `<div class="act ${st.ok ? '' : 'bad'}"><span class="n">${i + 1}</span><span class="ic">▶</span><span class="w"><code>${esc(st.command)}</code> <small>exit ${st.exit_code}</small>${st.tail && !st.ok ? `<pre class="json">${esc(st.tail)}</pre>` : ''}</span></div>`).join('');
+  const box = el('div', 'session');
+  box.innerHTML = `<div class="meta">${verdict}  ${d.steps ? d.steps.length : 0} tool calls, ${(d.files || []).length} files, sandbox ${Math.round((d.sandbox_elapsed_ms || 0) / 1000)} s</div>
+    <div class="acts">${rows}</div>
+    ${d.chart_url ? `<figure class="chart"><img src="${d.chart_url}" alt="chart the agent rendered in the sandbox"><figcaption>chart.png, rendered by the agent inside the sandbox and copied back</figcaption></figure>` : ''}
+    ${d.output && d.output.summary ? `<div class="meta">“${esc(d.output.summary)}”</div>` : ''}
+    <div class="why">The sandbox is the agent's own machine: a filesystem, a shell, pip. Every step above ran there, not in this app.</div>`;
+  body(s).appendChild(box);
 }
 function sandbox_log(d) { const s = current[sbKey(d)] || lastSandbox; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); let x = esc(d.line); if (d.line.startsWith('PROBE_RESULT')) x = `<span class="ok">${x}</span>`; else if (/^(daytona|local):/.test(d.line)) x = `<span class="k">${x}</span>`; else if (/error|Traceback|failed/i.test(d.line)) x = `<span class="no">${x}</span>`; l.innerHTML = x; t.appendChild(l); t.scrollTop = t.scrollHeight; }
 function conformance(d) {
@@ -265,7 +288,11 @@ function conformance(d) {
 function conformance_check(d) { const g = current['conf']?.querySelector('.checks'); if (!g) return; const c = el('div', 'check'); c.innerHTML = `<span class="b ${d.status}">${d.status}</span><span class="n" title="${esc(d.detail)}">${esc(d.name)}</span>`; g.appendChild(c); }
 function benchmark(d) {
   if (d.status === 'start') { const s = step('bench', '⏱', `Benchmarking ${short(d.model)}, ${d.runs} streamed runs`, `bench:${d.model}`); stamp(s, d.t); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
-  const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `<b>${d.ttft_ms} ms</b> to first token, <b>${d.tokens_per_s} tok/s</b>, ${d.output_tokens} output tokens, ${d.cached_prompt_tokens} prompt tokens served from cache on the repeat`)); }
+  const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t);
+    const bursty = (d.stream_note || '').startsWith('bursty');
+    const rate = bursty ? `<b>${d.end_to_end_tokens_per_s} tok/s</b> end to end` : `<b>${d.tokens_per_s} tok/s</b> decode${d.end_to_end_tokens_per_s ? `, ${d.end_to_end_tokens_per_s} tok/s end to end` : ''}`;
+    const reason = d.reasoning_tokens ? `, ${d.reasoning_tokens} of them reasoning` : (d.reasoning_chunks ? `, reasoning first` : '');
+    body(s).appendChild(el('div', 'meta', `<b>${d.ttft_ms} ms</b> to first token, ${rate}, ${d.output_tokens} output tokens${reason}, ${d.cached_prompt_tokens} prompt tokens served from cache on the repeat${d.stream_note ? `<br><span class="badge warn">${esc(d.stream_note)}</span>` : ''}`)); }
   benchRows.push(d); drawChart();
 }
 function text(d) { let s = current['text']; if (!s) { s = step('', '', 'Scout', 'text'); body(s).appendChild(el('div', 'meta')); } body(s).querySelector('.meta').textContent += d.delta; }
@@ -285,11 +312,12 @@ function report(d) {
     <div>Recommended model <span class="model">${esc(r.recommended_model)}</span></div>
     <div class="kpis">
       <div class="kpi"><b>${best ? best.ttft_ms : '–'}<small> ms</small></b><span>to first token</span></div>
-      <div class="kpi"><b>${best ? best.tokens_per_s : '–'}</b><span>tokens / s per user</span></div>
+      <div class="kpi"><b>${best ? (best.end_to_end_tokens_per_s || best.tokens_per_s) : '–'}</b><span>tokens / s, end to end</span></div>
       ${conf}
     </div>
     <div id="voice"></div>
     ${r.probes?.length ? `<div class="meta">${r.probes.map(p => `${p.tool_called ? '✔' : '✘'} ${esc(p.framework)} on ${esc(p.backend)}: ${esc(p.summary)}`).join('<br>')}</div>` : ''}
+    ${sessionChart ? `<figure class="chart"><img src="${sessionChart}" alt="chart rendered by the coding agent"><figcaption>rendered by the coding agent inside the sandbox</figcaption></figure>` : ''}
     ${cost}
     <h3>Findings</h3><ul class="tight">${(r.findings || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
     <h3>Next steps</h3><ul class="tight">${(r.next_steps || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
@@ -329,12 +357,12 @@ function trace(d) {
 function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.message))); $('#result').innerHTML = `<span class="badge no">Error</span> <span class="empty">${esc(d.message)}</span>`; }
 function run_end(d) { const s = step('done', '✓', `Done in ${d.elapsed_s} s`); stamp(s, d.t); $('#go').disabled = false; clearInterval(clock); $('#runClock').textContent = `${d.elapsed_s} s`; es && es.close(); }
 function drawChart() {
-  $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block';
+  $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block'; $('#chart').classList.toggle('has', benchRows.length > 0);
   if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${short(r.model)}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }
   const ink = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
   const data = { labels: benchRows.map(r => short(r.model)), datasets: [
     { label: 'ms to first token', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(5,43,66,.85)', yAxisID: 'y', borderRadius: 4 },
-    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(97,78,250,.75)', yAxisID: 'y1', borderRadius: 4 } ] };
+    { label: 'tokens / s (end to end)', data: benchRows.map(r => r.end_to_end_tokens_per_s || r.tokens_per_s), backgroundColor: 'rgba(97,78,250,.75)', yAxisID: 'y1', borderRadius: 4 } ] };
   const options = { responsive: true, animation: { duration: 200 }, plugins: { legend: { labels: { color: ink, boxWidth: 10, font: { family: 'Inter' } } } }, scales: { x: { ticks: { color: ink, font: { family: 'Inter', size: 11 } }, grid: { display: false } }, y: { position: 'left', ticks: { color: ink, font: { size: 11 } }, grid: { color: 'rgba(128,128,128,.15)' } }, y1: { position: 'right', ticks: { color: ink, font: { size: 11 } }, grid: { drawOnChartArea: false } } } };
   if (chart) { chart.data = data; chart.update(); } else { chart = new Chart($('#chart'), { type: 'bar', data, options }); }
 }

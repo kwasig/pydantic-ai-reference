@@ -9,6 +9,7 @@ returns a typed report whose `spoken_summary` the Studio says out loud through C
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -36,6 +37,7 @@ class StudioDeps(Deps):
     sandbox: Sandbox = field(default=None)  # type: ignore[assignment]
     emit: LogFn = field(default=lambda kind, data: None)
     eval_model: str | None = None  # the model the partner asked about; tools default to it
+    save_artifact: Callable[[str, bytes], str] | None = None  # (name, bytes) -> url, provided by the Studio
 
 
 # ----------------------------------------------------------------------------- output
@@ -81,6 +83,9 @@ Tools, and when to use them:
 - run_probe: run a real framework probe in a sandbox against Token Factory. This is the only way to
   claim an integration works. Use it whenever the ask mentions a framework, an integration, or
   "does X work". Prefer pydantic_ai unless the partner names another.
+- run_coding_session: a real coding-agent session inside the sandbox (files + shell): the agent on the
+  model writes a module and tests, runs pytest to green, renders a chart. Use it for any coding-agent
+  ask; it shows what the model does over many sequential tool calls, which a one-shot probe cannot.
 - run_conformance: the 13-check endpoint/model kit (tools, parallel calls, forced choice, json_schema,
   streaming deltas, prefix cache). ALWAYS run it once on the model you recommend: the partner's
   README needs the check table, and it tells you whether the model or the framework is at fault.
@@ -92,6 +97,8 @@ Rules:
 - A complete run calls run_probe, run_conformance and benchmark (two candidates when choosing a
   model). Skip one only if the partner's ask makes it meaningless, and say so in findings.
 - Be concrete. Every finding carries a number or a named check.
+- Benchmarks: quote tokens_per_s only when stream_note is empty; if it says "bursty", quote
+  end_to_end_tokens_per_s and say the stream was buffered. Mention reasoning tokens when present.
 - integration_verified is true only if a probe reported tool_called=true.
 - If the sandbox is disabled, say so in findings and keep going with what you can measure.
 - Say plainly when premium real-time inference is NOT the answer (batch, offline evals, embeddings).
@@ -185,6 +192,82 @@ async def run_probe(
     return outcome
 
 
+async def run_coding_session(ctx: RunContext[StudioDeps], model: str | None = None) -> dict[str, Any]:
+    """Run a real coding-agent session inside the sandbox: a PydanticAI agent on the model gets a filesystem and a
+    shell, implements a module, writes pytest tests, runs them to green and renders a matplotlib chart. Reports every
+    tool call, the independent pytest result, the files written and the chart. Use it for coding-agent asks.
+
+    Args:
+        model: Token Factory model id the coding agent runs on; defaults to the model under evaluation.
+    """
+    probe = PROBES["coding_session"]
+    s = ctx.deps.settings
+    model = await _served_model(ctx, model)
+    emit = ctx.deps.emit
+    sandbox = ctx.deps.sandbox
+    key = "coding_session"
+    emit(
+        "sandbox",
+        {"status": "start", "probe": key, "backend": sandbox.name, "framework": probe.framework, "model": model, "files": [probe.file]},
+    )
+
+    def log(line: str) -> None:
+        if not line.startswith("PROBE_RESULT"):
+            emit("sandbox_log", {"probe": key, "line": line})
+
+    env = {
+        "NEBIUS_BASE_URL": s.base_url,
+        "NEBIUS_API_KEY": s.api_key or "mock",
+        "NEBIUS_MODEL": model,
+        "PYDANTIC_AI_NO_BANNER": "1",
+        "MPLBACKEND": "Agg",
+    }
+    command = probe.command if sandbox.name == "local" else f"{probe.install} && {probe.command}"
+    fallback_note = ""
+    try:
+        result = await sandbox.run({probe.file: probe.source}, command, env=env, timeout_s=600, log=log)
+    except Exception as e:  # noqa: BLE001
+        err = f"{type(e).__name__}: {str(e)[:300]}"
+        log(f"{sandbox.name}: failed: {err}")
+        if sandbox.name != "local" and s.allow_local_exec:
+            from .sandbox import LocalSandbox
+
+            fallback_note = f"{sandbox.name} unreachable ({err}); fell back to the local sandbox"
+            result = await LocalSandbox().run({probe.file: probe.source}, probe.command, env=env, timeout_s=600, log=log)
+        else:
+            from .sandbox import SandboxResult
+
+            result = SandboxResult(sandbox.name, -1, "", err, 0.0)
+    parsed = parse_probe_result(result.stdout) or {}
+    tests = parsed.get("tests") or {}
+    chart_b64 = parsed.pop("chart_png_b64", None)
+    chart_url = None
+    if chart_b64 and ctx.deps.save_artifact:
+        chart_url = ctx.deps.save_artifact("chart.png", base64.b64decode(chart_b64))
+    outcome = {
+        "framework": probe.framework,
+        "framework_key": key,
+        "backend": result.backend,
+        "sandbox_id": result.sandbox_id,
+        "exit_code": result.exit_code,
+        "tool_called": bool(parsed.get("tool_called")),
+        "steps": parsed.get("steps") or [],
+        "tests": tests,
+        "tests_passed": bool(tests.get("ran")) and tests.get("failed", 1) == 0 and tests.get("passed", 0) > 0,
+        "files": parsed.get("files") or [],
+        "chart_url": chart_url,
+        "output": parsed.get("output"),
+        "usage": parsed.get("usage"),
+        "probe_elapsed_ms": parsed.get("elapsed_ms"),
+        "sandbox_elapsed_ms": result.duration_ms,
+        "stderr_tail": result.stderr[-600:] if result.stderr else "",
+        "notes": probe.notes + (f"; {fallback_note}" if fallback_note else ""),
+    }
+    emit("sandbox", {"status": "done", "probe": key, **outcome})
+    # what the agent reasons over: no base64, short tails
+    return {k: v for k, v in outcome.items() if k not in ("stderr_tail",)}
+
+
 async def run_conformance(ctx: RunContext[StudioDeps], model: str | None = None) -> dict[str, Any]:
     """Run the 13-check conformance kit against Token Factory for one model: tools, structured output, streaming, prefix cache.
 
@@ -245,7 +328,7 @@ async def benchmark(
     return r
 
 
-STUDIO_TOOLS = [list_models, run_probe, run_conformance, benchmark, web_search]
+STUDIO_TOOLS = [list_models, run_probe, run_coding_session, run_conformance, benchmark, web_search]
 
 
 # ----------------------------------------------------------------------------- agent
@@ -296,13 +379,13 @@ SCENARIOS: list[dict[str, str]] = [
     },
     {
         "id": "coding-daytona",
-        "model": "moonshotai/Kimi-K2.7-Code",
+        "model": "moonshotai/Kimi-K3",
         "title": "Coding agent · Daytona sandboxes",
         "workload": "coding-agent",
         "framework": "langgraph",
         "budget_ms": "",
-        "prompt": "We run a coding agent that executes in Daytona sandboxes and makes dozens of sequential model calls per task, so tokens per second is what we feel. Run the langgraph probe and the pydantic_ai probe in the sandbox against moonshotai/Kimi-K2.7-Code (fall back to the configured model if it is not served), run the conformance kit on it, benchmark it and MiniMaxAI/MiniMax-M3.1-Flash on a code-edit prompt, and tell us which framework to start with and what throughput to expect.",
-        "blurb": "Two real probes in a sandbox, throughput measured, one recommendation.",
+        "prompt": "We run a coding agent that executes in Daytona sandboxes and makes dozens of sequential model calls per task, so tokens per second is what we feel. Run a coding-agent session in the sandbox on moonshotai/Kimi-K3 (fall back to the configured model if it is not served) so we can see it write code, tests and a chart over many tool calls; also run the langgraph probe on it, run the conformance kit on it, benchmark it against moonshotai/Kimi-K2.7-Code on a code-edit prompt, and tell us which framework to start with and what throughput to expect.",
+        "blurb": "A coding agent works in a Daytona sandbox: code, tests, chart. Then the kit and throughput.",
     },
     {
         "id": "migrate-support-bot",

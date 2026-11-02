@@ -177,10 +177,91 @@ def _pick_tools(tools: list[dict[str, Any]], prompt: str, tool_choice: Any) -> l
 
 
 # the order a sensible agent would call things in; the mock walks this list for tools the prompt asks for
-_ORDER = ["list_models", "run_probe", "run_conformance", "benchmark", "benchmark_model", "web_search", "run_python"]
+_ORDER = ["list_models", "run_probe", "run_coding_session", "run_conformance", "benchmark", "benchmark_model", "web_search", "run_python"]
+# A scripted coding session (the probe's tools are write_file + run): the mock behaves like a competent
+# coding agent so the offline demo produces real files, green tests and a chart.
+_SESSION_SCRIPT: list[tuple[str, dict[str, str]]] = [
+    (
+        "write_file",
+        {
+            "path": "metrics.py",
+            "content": (
+                "def moving_average(xs, window):\n"
+                "    if not xs or window < 1:\n        raise ValueError('empty input or window < 1')\n"
+                "    out = []\n    for i in range(len(xs)):\n        lo = max(0, i - window + 1)\n"
+                "        out.append(sum(xs[lo : i + 1]) / (i - lo + 1))\n    return out\n\n\n"
+                "def percentile(xs, p):\n    if not xs:\n        raise ValueError('empty input')\n"
+                "    if not 0 <= p <= 100:\n        raise ValueError('p must be in 0..100')\n"
+                "    s = sorted(xs)\n    k = (len(s) - 1) * p / 100\n    f = int(k)\n    c = min(f + 1, len(s) - 1)\n"
+                "    return s[f] + (s[c] - s[f]) * (k - f)\n"
+            ),
+        },
+    ),
+    (
+        "write_file",
+        {
+            "path": "test_metrics.py",
+            "content": (
+                "import pytest\nfrom metrics import moving_average, percentile\n\n\n"
+                "def test_moving_average_window_3():\n    assert moving_average([1, 2, 3, 4], 3) == [1.0, 1.5, 2.0, 3.0]\n\n\n"
+                "def test_moving_average_window_1_is_identity():\n    assert moving_average([5, 7], 1) == [5.0, 7.0]\n\n\n"
+                "def test_percentile_median():\n    assert percentile([1, 2, 3, 4], 50) == 2.5\n\n\n"
+                "def test_percentile_bounds():\n    assert percentile([3, 1, 2], 0) == 1 and percentile([3, 1, 2], 100) == 3\n\n\n"
+                "def test_errors():\n    with pytest.raises(ValueError):\n        moving_average([], 3)\n"
+                "    with pytest.raises(ValueError):\n        moving_average([1], 0)\n"
+                "    with pytest.raises(ValueError):\n        percentile([], 50)\n"
+            ),
+        },
+    ),
+    ("run", {"command": "python -m pytest -q"}),
+    (
+        "write_file",
+        {
+            "path": "chart.py",
+            "content": (
+                "import math, random\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n"
+                "from metrics import moving_average\n\nrandom.seed(7)\n"
+                "xs = [10 + 3 * math.sin(i / 6) + random.gauss(0, 1.2) for i in range(60)]\n"
+                "ma = moving_average(xs, 5)\nfig, ax = plt.subplots(figsize=(9, 4.5), dpi=100)\n"
+                "ax.plot(xs, color='#9fb3c0', lw=1, label='series')\nax.plot(ma, color='#052b42', lw=2.2, label='5-point moving average')\n"
+                "ax.set_title('Noisy series and its moving average')\nax.legend(frameon=False)\n"
+                "for sp in ('top', 'right'):\n    ax.spines[sp].set_visible(False)\n"
+                "fig.tight_layout()\nfig.savefig('chart.png')\nprint('saved chart.png')\n"
+            ),
+        },
+    ),
+    ("run", {"command": "python chart.py"}),
+]
+
+
+def _coding_session_step(messages: list[dict[str, Any]], output_tools: list[dict[str, Any]]) -> dict[str, Any] | None:
+    done = sum(len(m.get("tool_calls") or []) for m in messages if m.get("role") == "assistant")
+    if done < len(_SESSION_SCRIPT):
+        name, args = _SESSION_SCRIPT[done]
+        return {
+            "tool_calls": [
+                {"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+            ]
+        }
+    if output_tools:
+        fn = output_tools[0]["function"]
+        args = {
+            "summary": "Implemented metrics.py (moving_average, percentile) with 5 pytest tests, all passing; chart.py rendered chart.png.",
+            "tests_passed": True,
+            "files_written": ["metrics.py", "test_metrics.py", "chart.py", "chart.png"],
+        }
+        return {
+            "tool_calls": [
+                {"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function", "function": {"name": fn["name"], "arguments": json.dumps(args)}}
+            ]
+        }
+    return {"content": "Done: metrics.py, test_metrics.py (5 passed), chart.png."}
+
+
 _KEYWORDS = {
     "list_models": ("list", "models", "served", "which model"),
     "run_probe": ("probe", "prove", "verify", "framework", "integration", "pydantic", "langgraph", "crewai"),
+    "run_coding_session": ("coding-agent session", "coding agent session", "coding session", "write code", "tests and a chart"),
     "run_conformance": ("conformance", "readiness", "agent-ready", "kit", "check by check", "rely on"),
     "benchmark": ("benchmark", "measure", "latency", "time-to-first-token", "ttft"),
     "benchmark_model": ("benchmark", "measure", "latency"),
@@ -290,6 +371,11 @@ def _decide(body: dict[str, Any]) -> dict[str, Any]:
         fns = [t for t in tools if t.get("type") == "function"]
         output_tools = [t for t in fns if _is_output_tool(t["function"]["name"])]
         plain = [t for t in fns if not _is_output_tool(t["function"]["name"])]
+        names = {t["function"]["name"] for t in plain}
+        if {"write_file", "run"} <= names:
+            scripted = _coding_session_step(messages, output_tools)
+            if scripted:
+                return scripted
         if not has_tool_results and not has_assistant_calls and plain:
             return {"tool_calls": _make_tool_calls(_pick_tools(tools, prompt, tool_choice), prompt)}
         # multi-step: keep calling tools the user asked for by name/keyword until each has run once

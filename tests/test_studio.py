@@ -21,6 +21,7 @@ async def studio(settings, monkeypatch, tmp_path):
     monkeypatch.setenv("TRACE_EXPORTER", "memory")
     monkeypatch.setenv("STUDIO_AUDIO_DIR", str(tmp_path / "audio"))
     monkeypatch.setenv("STUDIO_REPLAY_DIR", str(tmp_path / "replays"))
+    monkeypatch.setenv("STUDIO_ARTIFACT_DIR", str(tmp_path / "artifacts"))
     config.get_settings.cache_clear()
     import importlib
 
@@ -101,3 +102,23 @@ async def test_export_and_replay_round_trip(studio):
                 break
     assert kinds[0] == "run_start" and "report" in kinds and kinds[-1] == "run_end"
     assert (await studio.get(f"/api/runs/{replay_id}")).json()["report"]["title"] == doc["report"]["title"]
+
+
+async def test_coding_session_runs_in_the_sandbox_and_returns_a_chart(studio):
+    run_id = (await studio.post("/api/runs", json={"scenario": "coding-daytona"})).json()["run_id"]
+    sessions = []
+    async with studio.stream("GET", f"/api/runs/{run_id}/events") as r:
+        async for line in r.aiter_lines():
+            if line.startswith("data: "):
+                ev = json.loads(line[6:])
+                if ev["kind"] == "sandbox" and ev.get("status") == "done" and ev.get("probe") == "coding_session":
+                    sessions.append(ev)
+            if line.startswith("event: run_end"):
+                break
+    assert sessions, "the coding-agent session did not run"
+    sess = sessions[0]
+    assert sess["tool_called"] and len(sess["steps"]) >= 4
+    assert sess["tests_passed"] and sess["tests"]["passed"] >= 5
+    assert "chart.png" in sess["files"] and sess["chart_url"]
+    png = await studio.get(sess["chart_url"])
+    assert png.status_code == 200 and png.content[:8] == b"\x89PNG\r\n\x1a\n"

@@ -133,7 +133,7 @@ class LocalSandbox:
             return SandboxResult(
                 "local",
                 code,
-                out[-20000:],
+                out[-400_000:],  # a PROBE_RESULT line may carry a base64 chart
                 err[-8000:],
                 round((time.perf_counter() - t0) * 1000, 1),
                 sandbox_id=str(work),
