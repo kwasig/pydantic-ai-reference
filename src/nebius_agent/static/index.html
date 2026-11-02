@@ -186,11 +186,12 @@ const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = o => esc(JSON.stringify(o, null, 2));
 const short = m => String(m || '').split('/').pop();
-let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0, sessionChart = null;
+let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0, sessionChart = null, stateless = false;
 
 function svc(state, name, text) { const p = el('span', state); p.innerHTML = `<i></i>${esc(name)}<span class="label"> ${esc(text)}</span>`; p.title = `${name}: ${text}`; return p; }
 async function status(snapshot) {
   const r = snapshot || await fetch('/api/status').then(r => r.json()); const tf = r.token_factory;
+  if (!snapshot) stateless = !!r.stateless;
   $('#pills').replaceChildren(
     svc(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', 'Token Factory', tf.mock ? 'mock' : (tf.reachable ? `${tf.models} models` : 'unreachable')),
     svc(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), 'Daytona', r.daytona.configured ? 'sandboxes' : (r.daytona.fallback_local ? 'local fallback' : 'off')),
@@ -238,12 +239,34 @@ async function start(replay, replayTitle) {
   document.body.classList.add('running'); window.scrollTo(0, 0);
   runStart = Date.now(); clearInterval(clock); clock = setInterval(() => { $('#runClock').textContent = `${((Date.now() - runStart) / 1000).toFixed(0)} s`; }, 500);
   const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null };
-  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
+  const payload = JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake });
+  const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, dedicated, dedicated_log, text, report, voice, trace, error, run_end };
+  if (stateless) { streamPost(payload, H); return; }
+  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }).then(r => r.json());
   if (es) es.close();
   es = new EventSource(`/api/runs/${run_id}/events`);
-  const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, dedicated, dedicated_log, text, report, voice, trace, error, run_end };
   Object.keys(H).forEach(k => es.addEventListener(k, e => H[k](JSON.parse(e.data))));
   es.onerror = () => {};
+}
+// Serverless hosts cannot keep a run between requests: POST once and read the SSE stream from that response.
+async function streamPost(payload, H) {
+  let res;
+  try { res = await fetch('/api/runs/stream', { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }); }
+  catch (e) { error({ t: 0, message: `could not reach the server: ${e}` }); run_end({ t: 0, elapsed_s: 0 }); return; }
+  if (!res.ok || !res.body) { error({ t: 0, message: `server answered ${res.status}` }); run_end({ t: 0, elapsed_s: 0 }); return; }
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      let kind = null, data = '';
+      for (const line of block.split('\n')) { if (line.startsWith('event: ')) kind = line.slice(7); else if (line.startsWith('data: ')) data += line.slice(6); }
+      if (kind && H[kind]) { try { H[kind](JSON.parse(data)); } catch (e) { console.error(kind, e); } }
+    }
+  }
+  if ($('#go').disabled) run_end({ t: 0, elapsed_s: (Date.now() - runStart) / 1000 });
 }
 function step(cls, icon, title, key) {
   const s = el('div', `step ${cls}`);
@@ -368,7 +391,7 @@ function trace(d) {
   t.innerHTML = `<div class="empty" style="margin-bottom:8px">${d.count} spans with gen_ai attributes.${lf}</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
 }
 function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.message))); $('#result').innerHTML = `<span class="badge no">Error</span> <span class="empty">${esc(d.message)}</span>`; }
-function run_end(d) { const s = step('done', '✓', `Done in ${d.elapsed_s} s`); stamp(s, d.t); $('#go').disabled = false; clearInterval(clock); $('#runClock').textContent = `${d.elapsed_s} s`; es && es.close(); }
+function run_end(d) { if (!$('#go').disabled) return; const s = step('done', '✓', `Done in ${Number(d.elapsed_s).toFixed(2)} s`); stamp(s, d.t); $('#go').disabled = false; clearInterval(clock); $('#runClock').textContent = `${d.elapsed_s} s`; es && es.close(); }
 function drawChart() {
   $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block'; $('#chart').classList.toggle('has', benchRows.length > 0);
   if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${short(r.model)}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }

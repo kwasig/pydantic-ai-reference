@@ -15,6 +15,7 @@ GET  /audio/{file}                  Cartesia output
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import shutil
@@ -40,8 +41,13 @@ from .tracing import langfuse_configured, langfuse_host, langfuse_trace_url, mem
 from .voice import synthesize
 
 STATIC = Path(__file__).parent / "static"
-AUDIO_DIR = Path(os.getenv("STUDIO_AUDIO_DIR", "audio"))
-ARTIFACT_DIR = Path(os.getenv("STUDIO_ARTIFACT_DIR", "artifacts"))
+# Stateless mode (serverless hosts such as Vercel): one request runs the scout and streams it; media is
+# embedded inline instead of served from disk; nothing is written outside /tmp; saving recordings is off.
+STATELESS = os.getenv("STUDIO_STATELESS", "").lower() in ("1", "true", "yes")
+_REPO = Path(__file__).resolve().parents[2]
+_SCRATCH = Path(os.getenv("STUDIO_SCRATCH", "/tmp/nebius-scout")) if STATELESS else Path(".")
+AUDIO_DIR = Path(os.getenv("STUDIO_AUDIO_DIR", str(_SCRATCH / "audio") if STATELESS else "audio"))
+ARTIFACT_DIR = Path(os.getenv("STUDIO_ARTIFACT_DIR", str(_SCRATCH / "artifacts") if STATELESS else "artifacts"))
 
 
 class Intake(BaseModel):
@@ -88,7 +94,10 @@ class Run:
 
 
 RUNS: dict[str, Run] = {}
-REPLAY_DIR = Path(os.getenv("STUDIO_REPLAY_DIR", "demo/runs"))
+REPLAY_DIR = Path(
+    os.getenv("STUDIO_REPLAY_DIR")
+    or (str(_REPO / "demo" / "runs") if (_REPO / "demo" / "runs").exists() and not Path("demo/runs").exists() else "demo/runs")
+)
 
 
 def list_replays() -> list[dict[str, Any]]:
@@ -159,6 +168,8 @@ async def _execute(run: Run, settings: Settings) -> None:
         deps = build_studio_deps(settings, emit=run.emit, eval_model=run.model)
 
         def save_artifact(name: str, data: bytes) -> str:
+            if STATELESS:  # another instance may answer the next request: ship the bytes inline
+                return "data:image/png;base64," + base64.b64encode(data).decode()
             ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
             fname = f"{run.id}-{Path(name).name}"
             (ARTIFACT_DIR / fname).write_bytes(data)
@@ -234,9 +245,12 @@ async def _execute(run: Run, settings: Settings) -> None:
         # speak the summary
         run.emit("voice", {"status": "start", "text": report["spoken_summary"]})
         voice = await synthesize(report["spoken_summary"], settings, out_dir=str(AUDIO_DIR))
+        audio_url = f"/audio/{Path(voice.path).name}" if voice.path else None
+        if STATELESS and voice.path and Path(voice.path).exists():
+            audio_url = "data:audio/mpeg;base64," + base64.b64encode(Path(voice.path).read_bytes()).decode()
         run.audio = {
             "mode": voice.mode,
-            "url": f"/audio/{Path(voice.path).name}" if voice.path else None,
+            "url": audio_url,
             "text": voice.text,
             "model": voice.model,
             "elapsed_ms": voice.elapsed_ms,
@@ -448,7 +462,8 @@ async def status() -> dict[str, Any]:
         "cartesia": {"configured": bool(os.getenv("CARTESIA_API_KEY"))},
         "tavily": {"configured": bool(s.tavily_api_key)},
         "langfuse": {"configured": langfuse_configured(), "host": langfuse_host()},
-        "dedicated": {"allowed": dedicated_allowed()},
+        "dedicated": {"allowed": dedicated_allowed() and not STATELESS},
+        "stateless": STATELESS,
         "trace_exporter": s.trace_exporter,
     }
 
@@ -639,7 +654,10 @@ async def export_run(run_id: str, save_as: str | None = None) -> dict[str, Any]:
         "spans": run.spans,
         "services": await status(),
     }
-    if save_as:
+    if save_as and STATELESS:
+        doc["saved"] = None
+        doc["note"] = "saving recordings is disabled on a stateless host"
+    elif save_as:
         REPLAY_DIR.mkdir(parents=True, exist_ok=True)
         name = Path(save_as).stem
         (REPLAY_DIR / f"{name}.json").write_text(json.dumps(doc, default=str, indent=1), encoding="utf-8")
@@ -671,6 +689,54 @@ async def get_run(run_id: str) -> dict[str, Any]:
         "events": len(run.events),
         "spans": run.spans,
     }
+
+
+@app.post("/api/runs/stream")
+async def run_and_stream(req: StartRun) -> StreamingResponse:
+    """Start a run (or a replay) and stream its events in the same response. This is the only path that
+    works on a serverless host, where the next request may hit a different instance."""
+    s: Settings = app.state.settings
+    if req.replay:
+        if not (REPLAY_DIR / f"{Path(req.replay).stem}.json").exists():
+            raise HTTPException(404, "no such saved run")
+        run = Run(id=uuid.uuid4().hex[:10], prompt="(replay)", model=req.model or s.model, intake={"replay": req.replay})
+        task = asyncio.create_task(_replay(run, req.replay))
+    else:
+        prompt = req.prompt
+        if req.scenario:
+            sc = next((x for x in SCENARIOS if x["id"] == req.scenario), None)
+            if not sc:
+                raise HTTPException(404, "unknown scenario")
+            prompt = sc["prompt"]
+        if not prompt:
+            raise HTTPException(400, "prompt or scenario required")
+        run = Run(
+            id=uuid.uuid4().hex[:10],
+            prompt=prompt,
+            model=req.model or s.model,
+            intake=req.intake.model_dump(exclude_none=True) if req.intake else {},
+        )
+        task = asyncio.create_task(_execute(run, s))
+    RUNS[run.id] = run
+
+    async def gen() -> AsyncIterator[bytes]:
+        idx = 0
+        yield f": run {run.id}\n\n".encode()
+        while True:
+            while idx < len(run.events):
+                ev = run.events[idx]
+                idx += 1
+                yield f"event: {ev['kind']}\ndata: {json.dumps(ev, default=str)}\n\n".encode()
+                if ev["kind"] == "run_end":
+                    return
+            try:
+                await asyncio.wait_for(run.queue.get(), timeout=10)
+            except TimeoutError:
+                yield b": keepalive\n\n"
+            if task.done() and idx >= len(run.events):
+                return
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/runs/{run_id}/events")
