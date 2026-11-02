@@ -254,6 +254,8 @@ async def streaming_text(client: AsyncOpenAI, model: str) -> CheckResult:
         text = ""
         finish = None
         usage = None
+        usage_chunks = 0
+        usage_values: list[int] = []
         t0 = time.perf_counter()
         first = None
         stream = await client.chat.completions.create(
@@ -266,6 +268,8 @@ async def streaming_text(client: AsyncOpenAI, model: str) -> CheckResult:
         async for ch in stream:
             if ch.usage:
                 usage = ch.usage.model_dump()
+                usage_chunks += 1
+                usage_values.append(int(ch.usage.completion_tokens or 0))
             if ch.choices:
                 d = ch.choices[0].delta
                 if d and d.content:
@@ -276,11 +280,19 @@ async def streaming_text(client: AsyncOpenAI, model: str) -> CheckResult:
                 if ch.choices[0].finish_reason:
                     finish = ch.choices[0].finish_reason
         status = PASS if chunks > 1 and finish == "stop" else (PARTIAL if text else FAIL)
+        # vLLM-style servers may send cumulative usage in every chunk; frameworks that add per-chunk
+        # usage then over-count. Report it so the integration sets the right flag.
+        cumulative = usage_chunks > 1 and usage_values == sorted(usage_values)
+        usage_note = (
+            "final chunk only"
+            if usage_chunks == 1
+            else (f"cumulative in {usage_chunks} chunks" if cumulative else f"in {usage_chunks} chunks")
+        )
         return CheckResult(
             "",
             status,
-            f"{chunks} content chunks, finish={finish}, ttft={first and round(first, 1)}ms, usage_in_stream={usage is not None}",
-            {"usage": usage},
+            f"{chunks} content chunks, finish={finish}, ttft={first and round(first, 1)}ms, usage {usage_note}",
+            {"usage": usage, "usage_chunks": usage_chunks, "usage_cumulative": cumulative},
         )
 
     return await _timed("streaming.text", go)
@@ -324,6 +336,48 @@ async def streaming_tool_call_deltas(client: AsyncOpenAI, model: str) -> CheckRe
     return await _timed("streaming.tool_call_deltas", go)
 
 
+async def streaming_parallel_tool_call_deltas(client: AsyncOpenAI, model: str) -> CheckResult:
+    """Two tool calls in one streamed turn: every argument delta must land on its own tool-call index.
+    Found live on Token Factory: with several calls in flight, a parser can hand the tail of call N's
+    arguments to call N+1, so frameworks that reassemble by `index` get invalid JSON for both."""
+
+    async def go():
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Call get_weather for Amsterdam and get_time for Europe/Amsterdam, both now, in one turn."}
+            ],
+            tools=[WEATHER_TOOL, TIME_TOOL],
+            max_tokens=300,
+            stream=True,
+        )
+        acc: dict[int, dict[str, str]] = {}
+        async for ch in stream:
+            if not ch.choices:
+                continue
+            for tc in ch.choices[0].delta.tool_calls or []:
+                slot = acc.setdefault(tc.index, {"name": "", "arguments": ""})
+                if tc.function and tc.function.name:
+                    slot["name"] = tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+        if len(acc) < 2:
+            return CheckResult(
+                "", PARTIAL, f"model emitted {len(acc)} call(s) in one streamed turn; cannot judge delta routing", {"calls": acc}
+            )
+        bad = []
+        for i, c in sorted(acc.items()):
+            try:
+                json.loads(c["arguments"])
+            except json.JSONDecodeError as e:
+                bad.append(f"index {i} {c['name']}: {e.msg} in {c['arguments']!r}")
+        if bad:
+            return CheckResult("", FAIL, "argument deltas landed on the wrong tool-call index: " + "; ".join(bad)[:300], {"calls": acc})
+        return CheckResult("", PASS, f"{len(acc)} parallel calls, all argument streams valid JSON: {[c['name'] for c in acc.values()]}")
+
+    return await _timed("streaming.parallel_tool_call_deltas", go)
+
+
 async def cached_tokens_reported(client: AsyncOpenAI, model: str) -> CheckResult:
     async def go():
         system = ("You are a careful assistant for Nebius Token Factory partners. Answer briefly and precisely. ") * 40  # ~1k tokens
@@ -361,5 +415,6 @@ ALL_CHECKS: list[Check] = [
     structured_json_object,
     streaming_text,
     streaming_tool_call_deltas,
+    streaming_parallel_tool_call_deltas,
     cached_tokens_reported,
 ]

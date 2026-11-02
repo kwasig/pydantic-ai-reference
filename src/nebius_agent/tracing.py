@@ -9,7 +9,7 @@ PydanticAI instruments itself with OpenTelemetry using the GenAI semantic conven
   TRACE_EXPORTER=otlp     OTLP/HTTP to OTEL_EXPORTER_OTLP_ENDPOINT (Langfuse, Phoenix, Grafana, LangSmith...)
   TRACE_EXPORTER=none     disable
 
-Langfuse shortcut: set LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY and (optionally) LANGFUSE_HOST
+Langfuse shortcut: set LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY and (optionally) LANGFUSE_BASE_URL
 and we build the OTLP endpoint and Basic-auth header for you.
 """
 
@@ -71,7 +71,7 @@ def _langfuse_otlp_env() -> None:
     """Translate LANGFUSE_* into the standard OTEL_* variables."""
     pk, sk = os.getenv("LANGFUSE_PUBLIC_KEY"), os.getenv("LANGFUSE_SECRET_KEY")
     if pk and sk and not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
+        host = langfuse_host()
         auth = base64.b64encode(f"{pk}:{sk}".encode()).decode()
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
         os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth}"
@@ -81,13 +81,37 @@ def _langfuse_otlp_env() -> None:
 _memory_exporter: InMemorySpanExporter | None = None
 
 
+def langfuse_host() -> str:
+    return (os.getenv("LANGFUSE_BASE_URL") or os.getenv("LANGFUSE_HOST") or "https://cloud.langfuse.com").rstrip("/").strip('"')
+
+
+def langfuse_configured() -> bool:
+    return bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
+
+
+def langfuse_trace_url(trace_id_hex: str) -> str:
+    """Langfuse resolves /trace/<id> to the owning project."""
+    return f"{langfuse_host()}/trace/{trace_id_hex}"
+
+
 def configure_tracing(settings: Settings | None = None, exporter: str | None = None) -> TracerProvider:
     """Build a TracerProvider and make it global. Safe to call once per process."""
-    global _memory_exporter
     s = settings or get_settings()
     kind = (exporter or s.trace_exporter).lower()
     provider = TracerProvider(resource=Resource.create({SERVICE_NAME: s.service_name, "nebius.base_url": s.base_url}))
 
+    if "+" in kind:  # e.g. memory+otlp: the Studio keeps spans for its UI and ships them to Langfuse
+        for part in kind.split("+"):
+            _add_processor(provider, part.strip(), s)
+        trace.set_tracer_provider(provider)
+        return provider
+    _add_processor(provider, kind, s)
+    trace.set_tracer_provider(provider)
+    return provider
+
+
+def _add_processor(provider: TracerProvider, kind: str, s: Settings) -> None:
+    global _memory_exporter
     if kind == "console":
         provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=sys.stderr)))
     elif kind == "file":
@@ -103,10 +127,7 @@ def configure_tracing(settings: Settings | None = None, exporter: str | None = N
     elif kind == "none":
         pass
     else:
-        raise ValueError(f"unknown TRACE_EXPORTER={kind!r}; use file|console|otlp|memory|none")
-
-    trace.set_tracer_provider(provider)
-    return provider
+        raise ValueError(f"unknown TRACE_EXPORTER={kind!r}; use file|console|otlp|memory|none (or a+b)")
 
 
 def memory_spans() -> list[ReadableSpan]:

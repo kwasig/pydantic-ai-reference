@@ -48,6 +48,22 @@ async def pick_voice_id(client) -> str:
     raise RuntimeError("no Cartesia voices available; set CARTESIA_VOICE_ID")
 
 
+async def _collect(res) -> bytes:
+    """Cartesia SDK versions differ: tts.bytes() may return bytes, an async iterator, or a coroutine
+    resolving to either. Accept all of them."""
+    import inspect
+
+    if inspect.isawaitable(res):
+        res = await res
+    if isinstance(res, (bytes, bytearray)):
+        return bytes(res)
+    if hasattr(res, "__aiter__"):
+        return b"".join([c async for c in res])
+    if hasattr(res, "__iter__"):
+        return b"".join(res)
+    raise TypeError(f"unexpected Cartesia response type {type(res).__name__}")
+
+
 async def synthesize(text: str, settings: Settings, out_dir: str = "audio") -> VoiceResult:
     key = os.getenv("CARTESIA_API_KEY", "")
     text = text.strip()
@@ -62,14 +78,14 @@ async def synthesize(text: str, settings: Settings, out_dir: str = "audio") -> V
         last_err: Exception | None = None
         for model_id in _DEFAULT_MODELS:
             try:
-                chunks = client.tts.bytes(
+                res = client.tts.bytes(
                     model_id=model_id,
                     transcript=text,
                     voice={"mode": "id", "id": voice_id},
                     output_format={"container": "mp3", "bit_rate": 128000, "sample_rate": 44100},
                     language="en",
                 )
-                data = b"".join([c async for c in chunks])
+                data = await _collect(res)
                 if not data:
                     raise RuntimeError("empty audio")
                 Path(out_dir).mkdir(parents=True, exist_ok=True)

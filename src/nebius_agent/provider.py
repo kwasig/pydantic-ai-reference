@@ -9,7 +9,7 @@ partner's code; that is the point of the integration.
 from __future__ import annotations
 
 from openai import AsyncOpenAI
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -33,6 +33,16 @@ def token_factory_profile() -> OpenAIModelProfile:
         openai_chat_thinking_field="reasoning_content",  # DeepSeek / vLLM reasoning parsers use this field
         supports_auto_cache=True,  # Token Factory prefix cache reports prompt_tokens_details.cached_tokens
     )
+
+
+def token_factory_model_settings() -> OpenAIChatModelSettings:
+    """
+    Settings every Token Factory agent should carry. Found live, not assumed:
+    Token Factory (vLLM-style) sends *cumulative* `usage` in every streamed chunk. PydanticAI
+    adds per-chunk usage unless told the stream is cumulative, which over-counts tokens ~100x on
+    long streams. `openai_continuous_usage_stats=True` makes it replace instead of add.
+    """
+    return OpenAIChatModelSettings(openai_continuous_usage_stats=True)
 
 
 def make_client(settings: Settings | None = None) -> AsyncOpenAI:

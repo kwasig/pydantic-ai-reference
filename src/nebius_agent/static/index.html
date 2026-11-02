@@ -5,44 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nebius Integration Scout</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap">
 <script src="/static/chart.umd.js"></script>
 <style>
-/* Brand tokens: swap these four for the official Nebius values and the whole page follows. */
+/* Brand tokens, taken from nebius.com computed styles (Nov 2026):
+   ink #052B42 (navy), lime #E0FF4F (logo block / CTA), blue #3277FF, violet #614EFA, grey #F3F4F5; Inter body, Space Mono code. */
 :root {
-  --brand: #3b5bff;            /* primary accent */
-  --brand-ink: #0b0f1a;        /* near-black for text */
-  --brand-paper: #ffffff;      /* surfaces */
-  --brand-tint: #eef1ff;       /* soft accent fill */
-  --bg: #f5f6f9; --panel: var(--brand-paper); --panel-2: #f8f9fc; --ink: var(--brand-ink); --muted: #5f6b85; --rule: #e3e7ef;
-  --accent: var(--brand); --accent-soft: var(--brand-tint); --good: #16895a; --good-soft: #e4f6ec; --warn: #a66a00; --warn-soft: #fff3dc; --bad: #c92a2a; --bad-soft: #ffe8e8;
-  --term-bg: #0f1422; --term-ink: #d7e1f5;
-  --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --brand-ink: #052b42;        /* Nebius navy: text, primary buttons, header */
+  --brand-lime: #e0ff4f;       /* Nebius lime: logo block, highlight, success */
+  --brand-blue: #3277ff;       /* links and accents */
+  --brand-violet: #614efa;     /* secondary accent (benchmarks) */
+  --brand-paper: #ffffff;
+  --brand-grey: #f3f4f5;
+  --brand: var(--brand-ink);
+  --bg: var(--brand-grey); --panel: var(--brand-paper); --panel-2: #f7f8f9; --ink: var(--brand-ink); --muted: #5b6f7e; --rule: #e0e5e9;
+  --accent: var(--brand-blue); --accent-soft: #e6eeff; --good: #1f7a3f; --good-soft: #effbd1; --warn: #9a6200; --warn-soft: #fff3dc; --bad: #c92a2a; --bad-soft: #ffe8e8;
+  --violet-soft: #ebe8ff;
+  --term-bg: #001a2b; --term-ink: #d9e6ee;
+  --sans: "Inter", "Helvetica Neue", Arial, Helvetica, sans-serif; --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif; --mono: "Space Mono", ui-monospace, Menlo, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --bg: #0d1017; --panel: #141926; --panel-2: #1a2030; --ink: #e8ecf5; --muted: #98a3bb; --rule: #27304a; --accent: #8aa0ff; --accent-soft: #1c2546; --good: #5fd39b; --good-soft: #15301f; --warn: #f0b95d; --warn-soft: #332a14; --bad: #ff7b7b; --bad-soft: #3a1c1c; color-scheme: dark; }
+  :root:not([data-theme="light"]) { --bg: #001a2b; --panel: #0f2839; --panel-2: #143044; --ink: #eef3f6; --muted: #9fb3c0; --rule: #244457; --accent: #7fa8ff; --accent-soft: #1a3358; --good: #c9ec3a; --good-soft: #2a3a12; --warn: #f0b95d; --warn-soft: #332a14; --bad: #ff8a8a; --bad-soft: #3a1c1c; --violet-soft: #2a2358; --term-bg: #00111d; color-scheme: dark; }
 }
 * { box-sizing: border-box }
 html, body { height: 100% }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased }
-header { height: 60px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--rule); position: sticky; top: 0; z-index: 10 }
-.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -.01em }
-.logo .mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--brand), #7c3aed); }
-.logo span.p { color: var(--muted); font-weight: 500 }
-.logo span.p::before { content: "/"; margin: 0 8px; color: var(--rule) }
+header { height: 64px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: var(--brand-ink); color: #fff; position: sticky; top: 0; z-index: 10 }
+.logo { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 15px; letter-spacing: -.01em }
+.logo .mark { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--brand-lime); color: var(--brand-ink); font: 700 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase }
+.logo span.p { color: rgba(255,255,255,.85); font-weight: 500 }
+.logo span.p b { color: #fff; font-weight: 600 }
+.logo span.p::before { content: ""; display: inline-block; width: 1px; height: 18px; background: rgba(255,255,255,.25); margin: 0 12px -4px 0 }
 .status { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap }
-.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); padding: 5px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--rule) }
-.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block }
-.pill.live i { background: var(--good) } .pill.mock i { background: var(--warn) } .pill.off i { background: var(--bad) }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.8); border: 1px solid rgba(255,255,255,.14) }
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.4); display: inline-block }
+.pill.live i { background: var(--brand-lime); box-shadow: 0 0 0 3px rgba(224,255,79,.2) } .pill.mock i { background: #f0b95d } .pill.off i { background: #ff8a8a }
 main { display: grid; grid-template-columns: 360px minmax(0, 1fr) 420px; gap: 20px; padding: 20px 24px 40px; max-width: 1720px; margin: 0 auto }
 @media (max-width: 1240px) { main { grid-template-columns: 340px minmax(0, 1fr) } .col-r { grid-column: 1 / -1 } }
 @media (max-width: 800px) { main { grid-template-columns: 1fr } }
-.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 18px; min-width: 0 }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; min-width: 0; box-shadow: 0 1px 2px rgba(5,43,66,.04) }
 .card + .card { margin-top: 16px }
-h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 4px }
+h1 { font: 600 22px/1.2 var(--display); letter-spacing: -.02em; margin: 0 0 6px }
 .sub { color: var(--muted); margin: 0 0 16px }
-h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
+h2 { font: 700 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
 label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 12px 0 5px }
 select, input, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 10px }
 textarea { min-height: 120px; resize: vertical; font-size: 13.5px }
@@ -50,18 +56,23 @@ select:focus, input:focus, textarea:focus, button:focus-visible { outline: 2px s
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
 .examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px }
 .examples button { font: 500 12.5px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel-2); color: var(--ink); cursor: pointer }
-.examples button:hover, .examples button.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--accent) }
-.primary { width: 100%; margin-top: 14px; font: 600 15px var(--sans); color: #fff; background: var(--brand); border: 0; border-radius: 10px; padding: 12px; cursor: pointer }
-.primary:hover { filter: brightness(1.05) } .primary[disabled] { opacity: .55; cursor: wait }
+.examples button:hover { border-color: var(--brand-ink) } .examples button.sel { border-color: var(--brand-ink); background: var(--brand-lime); color: var(--brand-ink) }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .examples button:hover { border-color: var(--brand-lime) } }
+.primary { width: 100%; margin-top: 14px; font: 600 15px var(--sans); color: #fff; background: var(--brand-ink); border: 0; border-radius: 12px; padding: 13px; cursor: pointer; transition: background .15s, color .15s }
+.primary:hover { background: var(--brand-lime); color: var(--brand-ink) } .primary[disabled] { opacity: .55; cursor: wait }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .primary { background: var(--brand-lime); color: var(--brand-ink) } :root:not([data-theme="light"]) .primary:hover { background: #eaff7a } }
 .hint { font-size: 12px; color: var(--muted); margin-top: 8px }
+.replays { display: flex; flex-wrap: wrap; gap: 6px }
+.replays button { font: 500 12.5px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px dashed var(--rule); background: transparent; color: var(--muted); cursor: pointer }
+.replays button:hover { border-color: var(--brand-violet); color: var(--brand-violet) }
 /* timeline */
 .tl { display: flex; flex-direction: column; gap: 0; max-height: calc(100vh - 150px); overflow: auto; padding-right: 2px }
 .step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--rule); animation: in .18s ease-out }
 .step:last-child { border-bottom: 0 }
 @keyframes in { from { opacity: 0; transform: translateY(3px) } to { opacity: 1; transform: none } }
 .ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 11px var(--mono); background: var(--accent-soft); color: var(--accent) }
-.step.sandbox .ic { background: var(--good-soft); color: var(--good) } .step.conf .ic { background: var(--warn-soft); color: var(--warn) } .step.bench .ic { background: #efe7ff; color: #6d3fd1 } .step.report .ic { background: var(--brand); color: #fff } .step.err .ic { background: var(--bad-soft); color: var(--bad) }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .step.bench .ic { background: #2a1f45; color: #c4aaff } }
+.step.sandbox .ic { background: var(--good-soft); color: var(--good) } .step.conf .ic { background: var(--warn-soft); color: var(--warn) } .step.bench .ic { background: var(--violet-soft); color: var(--brand-violet) } .step.report .ic { background: var(--brand-lime); color: var(--brand-ink) } .step.err .ic { background: var(--bad-soft); color: var(--bad) }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .step.bench .ic { color: #b7a9ff } }
 .hd { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14.5px }
 .hd .t { margin-left: auto; font: 500 11.5px var(--mono); color: var(--muted); white-space: nowrap }
 .meta { font: 12.5px var(--mono); color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word }
@@ -75,20 +86,20 @@ pre.json { font: 12px/1.45 var(--mono); background: var(--panel-2); border: 1px 
 .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: sp .8s linear infinite; margin-left: 8px; vertical-align: middle }
 @keyframes sp { to { transform: rotate(360deg) } }
 .badge { display: inline-block; font: 600 11px var(--sans); letter-spacing: .04em; border-radius: 6px; padding: 3px 8px }
-.badge.ok { background: var(--good-soft); color: var(--good) } .badge.no { background: var(--bad-soft); color: var(--bad) } .badge.warn { background: var(--warn-soft); color: var(--warn) }
+.badge.ok { background: var(--brand-lime); color: var(--brand-ink) } .badge.no { background: var(--bad-soft); color: var(--bad) } .badge.warn { background: var(--warn-soft); color: var(--warn) }
 /* result */
 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 }
 .kpi { background: var(--panel-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px }
-.kpi b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.01em } .kpi span { font-size: 11.5px; color: var(--muted) }
+.kpi b { display: block; font: 600 22px/1.15 var(--display); letter-spacing: -.02em } .kpi span { font-size: 11.5px; color: var(--muted) }
 ul.tight { margin: 4px 0 0; padding-left: 18px } ul.tight li { margin: 3px 0 }
 .model { font: 500 13px var(--mono); background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 6px; word-break: break-all }
 pre.code { font: 12px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 12px; overflow: auto; margin: 8px 0 0; max-height: 300px }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px }
 .btn { font: 600 13px var(--sans); color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; cursor: pointer }
-.btn:hover { border-color: var(--accent); color: var(--accent) }
+.btn:hover { border-color: var(--brand-ink); background: var(--brand-lime); color: var(--brand-ink) }
 audio { width: 100%; margin-top: 8px }
 .spans { font: 12px var(--mono); display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto }
-.spans div { display: flex; gap: 8px } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) }
+.spans div { display: flex; gap: 8px } .spans a { color: var(--accent); text-decoration: none } .spans a:hover { text-decoration: underline } .kpi small { font-size: 13px; color: var(--muted); font-weight: 500 } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) }
 .empty { color: var(--muted); font-size: 13.5px }
 .usage { font: 12px var(--mono); color: var(--muted); margin-top: 10px }
 canvas { max-height: 200px }
@@ -96,7 +107,7 @@ canvas { max-height: 200px }
 </head>
 <body>
 <header>
-  <div class="logo"><span class="mark"></span>Nebius <span class="p">Integration Scout</span></div>
+  <div class="logo"><span class="mark">Nebius</span><span class="p"><b>Integration Scout</b> · Token Factory</span></div>
   <div class="status" id="pills"><span class="pill"><i></i>checking services…</span></div>
 </header>
 
@@ -119,7 +130,7 @@ canvas { max-height: 200px }
       <label for="prompt">Your ask, in your words</label>
       <textarea id="prompt"></textarea>
       <button class="primary" id="go">Run the scout</button>
-      <div class="hint">What runs: a real framework probe in a sandbox, the 12-check conformance kit, streaming benchmarks on your prompt, then a typed report spoken aloud.</div>
+      <div class="hint">What runs: a real framework probe in a sandbox, the 13-check conformance kit, streaming benchmarks on your prompt, then a typed report spoken aloud.</div>
     </div>
   </aside>
 
@@ -133,6 +144,7 @@ canvas { max-height: 200px }
     <div class="card"><h2>Measured on your prompt</h2><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Time to first token and tokens per second, per model.</div></div>
     <div class="card"><h2>Spoken summary</h2><div id="voice" class="empty">Cartesia Sonic reads the 60-word verdict when the run finishes.</div></div>
     <div class="card"><h2>Trace</h2><div id="trace" class="empty">OpenTelemetry spans (GenAI semantic conventions) for the run.</div></div>
+    <div class="card"><h2>Langfuse · observability partner</h2><div id="langfuse" class="empty">Loading…</div></div>
   </aside>
 </main>
 
@@ -152,6 +164,7 @@ async function status() {
     pill(r.cartesia.configured ? 'live' : 'mock', `Cartesia · ${r.cartesia.configured ? 'Sonic' : 'browser fallback'}`),
     pill(r.tavily.configured ? 'live' : 'off', `Tavily · ${r.tavily.configured ? 'on' : 'off'}`),
     pill(r.langfuse.configured ? 'live' : 'off', `Langfuse · ${r.langfuse.configured ? 'OTLP' : 'off'}`));
+  loadLangfuse();
 }
 async function init() {
   status();
@@ -161,22 +174,30 @@ async function init() {
   const m = await fetch('/api/models').then(r => r.json());
   m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = id; if (id === m.default) o.selected = true; $('#model').appendChild(o); });
   box.children[0].click();
-  $('#go').onclick = start;
+  $('#go').onclick = () => start();
+  const rl = await fetch('/api/runs').then(r => r.json()).catch(() => ({ replays: [] }));
+  if (rl.replays && rl.replays.length) {
+    const wrap = el('div', 'replays');
+    wrap.innerHTML = '<h2 style="margin-top:14px">Replay a saved live run</h2>';
+    rl.replays.forEach(r => { const b = el('button', 'replay', `▶ ${esc(r.title || r.name)}`); b.title = `${r.model} · recorded ${r.recorded_at || ''}`; b.onclick = () => start(r.name); wrap.appendChild(b); });
+    $('#examples').after(wrap);
+  }
 }
 function applyScenario(s, b) {
   [...$('#examples').children].forEach(c => c.classList.remove('sel')); b.classList.add('sel');
   $('#workload').value = s.workload; $('#framework').value = s.framework; $('#budget').value = s.budget_ms || ''; $('#prompt').value = s.prompt;
+  if (s.model && [...$('#model').options].some(o => o.value === s.model)) $('#model').value = s.model;
 }
 function composePrompt() {
   const w = $('#workload').value, f = $('#framework').selectedOptions[0].textContent, b = $('#budget').value, v = $('#volume').value, ask = $('#prompt').value.trim();
   const ctx = `Context: workload=${w}; framework=${f}; model to evaluate=${$('#model').value}${b ? `; time-to-first-token budget=${b} ms` : ''}${v ? `; expected volume=${v}M tokens/month` : ''}.`;
   return `${ask}\n\n${ctx}`;
 }
-async function start() {
+async function start(replay) {
   $('#go').disabled = true; current = {}; benchRows = []; drawChart();
   $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Running…</span>'; $('#voice').innerHTML = '<span class="empty">…</span>'; $('#trace').innerHTML = '<span class="empty">…</span>';
   const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null };
-  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
+  const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
   if (es) es.close();
   es = new EventSource(`/api/runs/${run_id}/events`);
   const H = { run_start, tool_call, tool_result, sandbox, sandbox_log, conformance, conformance_check, benchmark, text, report, voice, trace, error, run_end };
@@ -190,7 +211,7 @@ function step(cls, icon, title, key) {
 }
 const body = s => s.querySelector('.body');
 const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)}s`; };
-function run_start(d) { const s = step('', '▶', `Scout started · ${d.mock ? 'mock Token Factory' : 'Token Factory'} · ${d.model.split('/').pop()} · sandbox: ${d.sandbox}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.prompt))); }
+function run_start(d) { const s = step('', '▶', `Scout started · ${d.mock ? 'mock Token Factory' : 'Token Factory'} · ${d.model.split('/').pop()} · sandbox: ${d.sandbox}${d.replay ? ' · replay of a recorded live run' : ''}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.prompt))); }
 function tool_call(d) { const s = step('', 'fn', `${d.tool}`, `tool:${d.call_id}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
 function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>raw result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }
 function sandbox(d) {
@@ -248,11 +269,22 @@ function voice(d) {
   if (d.mode === 'cartesia' && d.url) v.innerHTML = `<span class="badge ok">Cartesia ${esc(d.model || '')}</span> <span class="empty">synthesised in ${Math.round(d.elapsed_ms)} ms</span><audio controls autoplay src="${d.url}"></audio><p class="meta">“${esc(d.text)}”</p>`;
   else { v.innerHTML = `<span class="badge warn">Browser voice</span> <span class="empty">${esc(d.error || 'set CARTESIA_API_KEY for Sonic')}</span><p class="meta">“${esc(d.text)}”</p><button class="btn" id="say">Play</button>`; const say = () => { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(d.text)); } catch (e) {} }; $('#say').onclick = say; say(); }
 }
+async function loadLangfuse() {
+  const box = $('#langfuse'); if (!box) return;
+  const m = await fetch('/api/langfuse/metrics').then(r => r.json()).catch(() => null);
+  if (!m || !m.configured) { box.innerHTML = '<span class="empty">Set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY to export every run and read metrics back.</span>'; return; }
+  if (m.error) { box.innerHTML = `<span class="badge warn">Langfuse API</span> <span class="empty">${esc(m.error)}</span>`; return; }
+  box.innerHTML = `<div class="kpis"><div class="kpi"><b>${m.count}</b><span>traces · last ${m.hours}h</span></div><div class="kpi"><b>${m.model_calls}</b><span>model calls traced</span></div><div class="kpi"><b>${m.p95_latency_s ?? '–'}<small> s</small></b><span>p95 run latency</span></div></div>
+    <div class="spans">${m.traces.map(t => `<div><a class="n" href="${t.url}" target="_blank" rel="noopener">${esc(t.name)} · ${esc((t.models[0] || '').split('/').pop())}</a><span class="d">${t.latency_s != null ? t.latency_s.toFixed(1) + ' s' : ''} · ${t.generations} gen</span></div>`).join('')}</div>
+    <div class="usage">${m.observations} observations read back from ${esc(m.host.replace('https://', ''))} · /api/public/v2/observations</div>`;
+}
 function trace(d) {
   const t = $('#trace'); if (!d.spans.length) { t.innerHTML = '<span class="empty">no spans captured</span>'; return; }
+  if (d.langfuse && d.langfuse.exported) setTimeout(loadLangfuse, 4000);
   const byId = {}; d.spans.forEach(s => byId[s.span_id] = s);
   const depth = s => { let n = 0, p = s.parent_span_id; while (p && byId[p]) { n++; p = byId[p].parent_span_id; } return n; };
-  t.innerHTML = `<div class="empty" style="margin-bottom:6px">${d.count} spans · gen_ai.* attributes</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
+  const lf = d.langfuse && d.langfuse.url ? ` · <a href="${d.langfuse.url}" target="_blank" rel="noopener">open in Langfuse ↗</a>` : (d.trace_id ? ` · trace ${d.trace_id.slice(0, 12)}…` : '');
+  t.innerHTML = `<div class="empty" style="margin-bottom:6px">${d.count} spans · gen_ai.* attributes${lf}</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
 }
 function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.message))); $('#result').innerHTML = `<span class="badge no">Error</span> <span class="empty">${esc(d.message)}</span>`; }
 function run_end(d) { const s = step('', '■', `Done in ${d.elapsed_s}s`); stamp(s, d.t); $('#go').disabled = false; es && es.close(); }
@@ -261,8 +293,8 @@ function drawChart() {
   if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${r.model}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }
   const ink = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
   const data = { labels: benchRows.map(r => r.model.split('/').pop()), datasets: [
-    { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(59,91,255,.75)', yAxisID: 'y' },
-    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(22,137,90,.7)', yAxisID: 'y1' } ] };
+    { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(5,43,66,.85)', yAxisID: 'y' },
+    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(97,78,250,.75)', yAxisID: 'y1' } ] };
   const options = { responsive: true, animation: { duration: 200 }, plugins: { legend: { labels: { color: ink, boxWidth: 10 } } }, scales: { x: { ticks: { color: ink }, grid: { display: false } }, y: { position: 'left', title: { display: true, text: 'ms', color: ink }, ticks: { color: ink }, grid: { color: 'rgba(128,128,128,.15)' } }, y1: { position: 'right', title: { display: true, text: 'tok/s', color: ink }, ticks: { color: ink }, grid: { drawOnChartArea: false } } } };
   if (chart) { chart.data = data; chart.update(); } else { chart = new Chart($('#chart'), { type: 'bar', data, options }); }
 }
