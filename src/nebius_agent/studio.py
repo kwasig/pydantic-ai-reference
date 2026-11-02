@@ -550,6 +550,20 @@ async def dedicated_info() -> dict[str, Any]:
     return {"allowed": dedicated_allowed(), "templates": templates, "endpoints": endpoints}
 
 
+@app.get("/api/dedicated/plan")
+async def dedicated_plan(model: str) -> dict[str, Any]:
+    """Dry run: what provision_dedicated_endpoint would create for this model. No side effects."""
+    s: Settings = app.state.settings
+    if not s.api_key or s.is_mock:
+        return {"model": model, "template": None}
+    c = DedicatedClient(s.api_key)
+    try:
+        tpl = await c.find_template(model)
+        return {"model": model, "template": (tpl or {}).get("name"), "config": DedicatedClient.cheapest_config(tpl) if tpl else None}
+    finally:
+        await c.aclose()
+
+
 @app.get("/api/pricing")
 async def pricing() -> dict[str, Any]:
     return {"models": load_pricing(), "source": os.getenv("PRICING_FILE", "pricing.json")}

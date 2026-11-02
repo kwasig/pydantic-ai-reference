@@ -95,11 +95,32 @@ class DedicatedClient:
     async def find_template(self, model_name: str) -> dict[str, Any] | None:
         tpls = await self.templates()
         want = model_name.lower()
-        exact = [t for t in tpls if str(_pick(t, "model_name", "model", "name", default="")).lower() == want]
+        exact = [t for t in tpls if str(_pick(t, "model_name", "name", "model", default="")).lower() == want]
         if exact:
             return exact[0]
-        loose = [t for t in tpls if want.split("/")[-1] in str(_pick(t, "model_name", "model", "name", default="")).lower()]
+        loose = [t for t in tpls if want.split("/")[-1] in str(_pick(t, "model_name", "name", "model", default="")).lower()]
         return loose[0] if loose else None
+
+    @staticmethod
+    def cheapest_config(tpl: dict[str, Any], flavor_name: str | None = None) -> dict[str, Any]:
+        """Pick the smallest GPU configuration a template allows (fewest GPUs, then cheaper GPU class)."""
+        flavors = tpl.get("flavors") or {}
+        if isinstance(flavors, list):
+            flavors = {str(_pick(f, "name", "flavor_name", default=i)): f for i, f in enumerate(flavors)}
+        fname = flavor_name if flavor_name in flavors else ("base" if "base" in flavors else (next(iter(flavors), "base")))
+        flavor = flavors.get(fname) or {}
+        gpus = ((flavor.get("available_configurations") or {}).get("gpu_configurations")) or {}
+        rank = {"gpu-l40s-d": 0, "gpu-h100-sxm": 1, "gpu-h200-sxm": 2, "gpu-b200-sxm": 3, "gpu-b300-sxm": 4}
+        best = None
+        for gpu_type, cfg in gpus.items():
+            counts = sorted(cfg.get("allowed_gpu_counts") or [1])
+            regions = cfg.get("allowed_regions") or []
+            key = (counts[0], rank.get(gpu_type, 9))
+            if best is None or key < best[0]:
+                best = (key, gpu_type, counts[0], regions[0] if regions else None)
+        if best is None:
+            return {"flavor_name": fname, "gpu_type": "gpu-h100-sxm", "gpu_count": 1, "region": None}
+        return {"flavor_name": fname, "gpu_type": best[1], "gpu_count": best[2], "region": best[3]}
 
     async def create(
         self,
@@ -112,16 +133,15 @@ class DedicatedClient:
         name: str | None = None,
     ) -> DedicatedEndpoint:
         tpl = await self.find_template(model_name) or {}
-        flavors = tpl.get("flavors") if isinstance(tpl.get("flavors"), list) else []
-        flavor = flavors[0] if flavors else {}
+        cfg = self.cheapest_config(tpl, flavor_name)
         body = {
             "name": name or f"{SCOUT_PREFIX}{model_name.split('/')[-1].lower()[:24]}-{int(time.time()) % 100000}",
             "description": "Integration Scout: temporary endpoint for a latency measurement; auto-deleted",
-            "model_name": _pick(tpl, "model_name", "model", default=model_name),
-            "flavor_name": flavor_name or _pick(flavor, "name", "flavor_name", default="base"),
-            "gpu_type": gpu_type or _pick(flavor, "gpu_type", default=_pick(tpl, "gpu_type", default="gpu-h100-sxm")),
-            "gpu_count": int(gpu_count or _pick(flavor, "gpu_count", default=_pick(tpl, "gpu_count", default=1))),
-            "region": region or _pick(tpl, "region", default=os.getenv("NEBIUS_DEDICATED_REGION", "us-central1")),
+            "model_name": _pick(tpl, "model_name", "name", default=model_name),
+            "flavor_name": cfg["flavor_name"],
+            "gpu_type": gpu_type or cfg["gpu_type"],
+            "gpu_count": int(gpu_count or cfg["gpu_count"]),
+            "region": region or cfg["region"] or os.getenv("NEBIUS_DEDICATED_REGION", "us-central1"),
             "scaling": {"min_replicas": 1, "max_replicas": 1},
         }
         r = await self._h.post("/v0/dedicated_endpoints", json=body)
@@ -153,8 +173,15 @@ class DedicatedClient:
         """Poll until readiness says ready, then confirm with one real chat call (404 while routing is not live)."""
         t0 = time.time()
         last = ""
+        seen_raw = False
         while time.time() - t0 < timeout_s:
-            life, ready, _ = await self.status(ep.endpoint_id)
+            life, ready, raw = await self.status(ep.endpoint_id)
+            if raw and not seen_raw and log:
+                seen_raw = True
+                log(
+                    "dedicated: status fields "
+                    + ", ".join(f"{k}={str(v)[:40]}" for k, v in raw.items() if k not in ("name", "description"))
+                )
             if (life, ready) != last and log:
                 log(f"dedicated: {ep.name} lifecycle={life or '?'} readiness={ready or '?'} ({int(time.time() - t0)} s)")
                 last = (life, ready)
