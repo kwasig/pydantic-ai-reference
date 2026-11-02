@@ -190,10 +190,7 @@ class DedicatedClient:
                 ep.endpoint_id = str(_pick(raw, "id", "endpoint_id"))
             if raw and not seen_raw and log:
                 seen_raw = True
-                log(
-                    "dedicated: status fields "
-                    + ", ".join(f"{k}={str(v)[:40]}" for k, v in raw.items() if k not in ("name", "description"))
-                )
+                log(f"dedicated: id={_pick(raw, 'id', 'endpoint_id')} routing_key={raw.get('routing_key')} region={raw.get('region')}")
             if (life, ready) != last and log:
                 log(f"dedicated: {ep.name} lifecycle={life or '?'} readiness={ready or '?'} ({int(time.time() - t0)} s)")
                 last = (life, ready)
