@@ -57,4 +57,7 @@ TRACE_FILE=traces/live.jsonl nebius-agent trace || true
 on_off() { if [ -n "${1:-}" ]; then echo on; else echo off; fi; }
 echo; echo "▶ 4/4  Studio UI  (Daytona: $(on_off "${DAYTONA_API_KEY:-}"), Cartesia: $(on_off "${CARTESIA_API_KEY:-}"), Tavily: $(on_off "${TAVILY_API_KEY:-}"))"
 export TRACE_EXPORTER=memory
-nebius-agent studio --port 8090
+PORT="${STUDIO_PORT:-8090}"
+# if the port is taken (an older Studio still running), move to the next one
+while (lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1); do PORT=$((PORT+1)); done
+nebius-agent studio --port "$PORT"
