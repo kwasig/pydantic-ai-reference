@@ -50,4 +50,6 @@ def settings(mock_base_url: str, tmp_path) -> Settings:
         trace_exporter="memory",
         trace_file=str(tmp_path / "spans.jsonl"),
         allow_local_exec=True,
+        daytona_api_key="",  # tests never touch Daytona, whatever .env says
+        tavily_api_key="",
     )

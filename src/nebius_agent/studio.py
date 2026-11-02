@@ -1,0 +1,306 @@
+"""
+Nebius FDE Studio: the web UI and run manager around the Studio agent.
+
+    nebius-agent studio            # http://127.0.0.1:8090
+
+POST /api/runs                      start a run  {"prompt" | "scenario", "model"?}  -> {"run_id"}
+GET  /api/runs/{id}/events          Server-Sent Events: everything the agent does, as it happens
+GET  /api/runs/{id}                 the run's final state (report, usage, trace summary)
+GET  /api/status                    which services are live (Token Factory, Daytona, Cartesia, Tavily, Langfuse)
+GET  /api/models                    models served by the configured endpoint
+GET  /api/scenarios                 the preset scenarios
+GET  /audio/{file}                  Cartesia output
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, AsyncIterator
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from pydantic import BaseModel
+
+from .config import Settings, get_settings
+from .provider import make_client
+from .studio_agent import SCENARIOS, build_studio_agent, build_studio_deps
+from .tracing import memory_spans
+from .voice import synthesize
+
+STATIC = Path(__file__).parent / "static"
+AUDIO_DIR = Path(os.getenv("STUDIO_AUDIO_DIR", "audio"))
+
+
+class StartRun(BaseModel):
+    prompt: str | None = None
+    scenario: str | None = None
+    model: str | None = None
+
+
+@dataclass
+class Run:
+    id: str
+    prompt: str
+    model: str
+    started: float = field(default_factory=time.time)
+    status: str = "running"  # running | done | error
+    events: list[dict[str, Any]] = field(default_factory=list)
+    queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    report: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
+    error: str | None = None
+    audio: dict[str, Any] | None = None
+    spans: list[dict[str, Any]] = field(default_factory=list)
+
+    def emit(self, kind: str, data: dict[str, Any] | None = None) -> None:
+        ev = {"seq": len(self.events), "t": round(time.time() - self.started, 3), "kind": kind, **(data or {})}
+        self.events.append(ev)
+        self.queue.put_nowait(ev)
+
+
+RUNS: dict[str, Run] = {}
+
+
+def _span_dict(span) -> dict[str, Any]:
+    ctx = span.get_span_context()
+    parent = span.parent.span_id if span.parent else None
+    attrs = dict(span.attributes or {})
+    keep = {
+        k: v
+        for k, v in attrs.items()
+        if k.startswith("gen_ai.") and not k.endswith(("messages", "content", "input.messages", "output.messages"))
+    }
+    return {
+        "name": span.name,
+        "span_id": f"{ctx.span_id:016x}",
+        "parent_span_id": f"{parent:016x}" if parent else None,
+        "start_ns": span.start_time,
+        "duration_ms": round(((span.end_time or 0) - (span.start_time or 0)) / 1e6, 1),
+        "attributes": keep,
+    }
+
+
+async def _execute(run: Run, settings: Settings) -> None:
+    agent = build_studio_agent(settings, run.model, instrument=True, trace_exporter="memory")
+    deps = build_studio_deps(settings, emit=run.emit)
+    run.emit(
+        "run_start",
+        {"prompt": run.prompt, "model": run.model, "endpoint": settings.base_url, "sandbox": deps.sandbox.name, "mock": settings.is_mock},
+    )
+    try:
+        async with agent.run_stream_events(run.prompt, deps=deps) as events:
+            async for ev in events:
+                k = ev.event_kind
+                if k == "function_tool_call":
+                    run.emit("tool_call", {"tool": ev.part.tool_name, "args": _safe_json(ev.part.args), "call_id": ev.part.tool_call_id})
+                elif k == "function_tool_result":
+                    run.emit(
+                        "tool_result",
+                        {"tool": ev.part.tool_name, "call_id": ev.part.tool_call_id, "result": _trim(_safe_json(ev.part.content))},
+                    )
+                elif k == "part_start" and type(ev.part).__name__ == "TextPart" and getattr(ev.part, "content", ""):
+                    run.emit("text", {"delta": ev.part.content})
+                elif k == "part_delta" and type(ev.delta).__name__ == "TextPartDelta":
+                    run.emit("text", {"delta": ev.delta.content_delta})
+                elif k == "final_result":
+                    run.emit("final_result_started", {"tool": ev.tool_name})
+            result = events.result
+        report = result.output.model_dump()
+        u = result.usage
+        run.report = report
+        run.usage = {
+            "requests": u.requests,
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            "cache_read_tokens": getattr(u, "cache_read_tokens", 0) or 0,
+        }
+        run.emit("report", {"report": report, "usage": run.usage})
+        # speak the summary
+        run.emit("voice", {"status": "start", "text": report["spoken_summary"]})
+        voice = await synthesize(report["spoken_summary"], settings, out_dir=str(AUDIO_DIR))
+        run.audio = {
+            "mode": voice.mode,
+            "url": f"/audio/{Path(voice.path).name}" if voice.path else None,
+            "text": voice.text,
+            "model": voice.model,
+            "elapsed_ms": voice.elapsed_ms,
+            "error": voice.error,
+        }
+        run.emit("voice", {"status": "done", **run.audio})
+        run.status = "done"
+    except Exception as e:  # noqa: BLE001
+        run.status = "error"
+        run.error = f"{type(e).__name__}: {str(e)[:500]}"
+        run.emit("error", {"message": run.error})
+    finally:
+        try:
+            run.spans = [
+                _span_dict(s)
+                for s in memory_spans()
+                if s.start_time
+                and s.start_time / 1e9 >= run.started - 1
+                and s.name.split(" ")[0] in ("invoke_agent", "chat", "execute_tool", "running", "agent")
+            ]
+        except Exception:  # noqa: BLE001
+            run.spans = []
+        run.emit("trace", {"spans": run.spans, "count": len(run.spans)})
+        run.emit("run_end", {"status": run.status, "elapsed_s": round(time.time() - run.started, 2)})
+        await deps.http.aclose()
+
+
+def _safe_json(v: Any) -> Any:
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except json.JSONDecodeError:
+            return v
+    if hasattr(v, "model_dump"):
+        return v.model_dump()
+    try:
+        json.dumps(v)
+        return v
+    except TypeError:
+        return str(v)
+
+
+def _trim(v: Any, limit: int = 4000) -> Any:
+    s = json.dumps(v, default=str)
+    return v if len(s) <= limit else {"truncated": True, "preview": s[:limit]}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.settings = get_settings()
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    yield
+
+
+app = FastAPI(title="Nebius FDE Studio", version="0.2.0", lifespan=lifespan)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> HTMLResponse:
+    return HTMLResponse((STATIC / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/static/{name}")
+async def static_file(name: str) -> FileResponse:
+    p = STATIC / Path(name).name
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p)
+
+
+@app.get("/api/scenarios")
+async def scenarios() -> list[dict[str, str]]:
+    return SCENARIOS
+
+
+@app.get("/api/status")
+async def status() -> dict[str, Any]:
+    s: Settings = app.state.settings
+    tf = {"configured": bool(s.api_key) or s.is_mock, "endpoint": s.base_url, "model": s.model, "mock": s.is_mock, "reachable": None}
+    try:
+        client = make_client(s)
+        page = await asyncio.wait_for(client.models.list(), timeout=8)
+        tf["reachable"] = True
+        tf["models"] = len(page.data)
+    except Exception as e:  # noqa: BLE001
+        tf["reachable"] = False
+        tf["error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    return {
+        "token_factory": tf,
+        "daytona": {"configured": bool(s.daytona_api_key), "fallback_local": s.allow_local_exec},
+        "cartesia": {"configured": bool(os.getenv("CARTESIA_API_KEY"))},
+        "tavily": {"configured": bool(s.tavily_api_key)},
+        "langfuse": {
+            "configured": bool(os.getenv("LANGFUSE_PUBLIC_KEY")),
+            "host": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        },
+        "trace_exporter": s.trace_exporter,
+    }
+
+
+@app.get("/api/models")
+async def models() -> dict[str, Any]:
+    s: Settings = app.state.settings
+    try:
+        page = await asyncio.wait_for(make_client(s).models.list(), timeout=10)
+        return {"models": [m.id for m in page.data], "default": s.model}
+    except Exception as e:  # noqa: BLE001
+        return {"models": [s.model], "default": s.model, "error": str(e)[:200]}
+
+
+@app.post("/api/runs")
+async def start_run(req: StartRun) -> dict[str, str]:
+    s: Settings = app.state.settings
+    prompt = req.prompt
+    if req.scenario:
+        sc = next((x for x in SCENARIOS if x["id"] == req.scenario), None)
+        if not sc:
+            raise HTTPException(404, "unknown scenario")
+        prompt = sc["prompt"]
+    if not prompt:
+        raise HTTPException(400, "prompt or scenario required")
+    run = Run(id=uuid.uuid4().hex[:10], prompt=prompt, model=req.model or s.model)
+    RUNS[run.id] = run
+    asyncio.create_task(_execute(run, s))
+    return {"run_id": run.id}
+
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: str) -> dict[str, Any]:
+    run = RUNS.get(run_id)
+    if not run:
+        raise HTTPException(404, "no such run")
+    return {
+        "id": run.id,
+        "status": run.status,
+        "prompt": run.prompt,
+        "model": run.model,
+        "report": run.report,
+        "usage": run.usage,
+        "audio": run.audio,
+        "error": run.error,
+        "events": len(run.events),
+        "spans": run.spans,
+    }
+
+
+@app.get("/api/runs/{run_id}/events")
+async def run_events(run_id: str, since: int = 0) -> StreamingResponse:
+    run = RUNS.get(run_id)
+    if not run:
+        raise HTTPException(404, "no such run")
+
+    async def gen() -> AsyncIterator[bytes]:
+        # replay what already happened, then follow live
+        idx = since
+        while True:
+            while idx < len(run.events):
+                ev = run.events[idx]
+                idx += 1
+                yield f"event: {ev['kind']}\ndata: {json.dumps(ev, default=str)}\n\n".encode()
+                if ev["kind"] == "run_end":
+                    return
+            try:
+                await asyncio.wait_for(run.queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield b": keepalive\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/audio/{name}")
+async def audio(name: str) -> FileResponse:
+    p = AUDIO_DIR / Path(name).name
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p, media_type="audio/mpeg")

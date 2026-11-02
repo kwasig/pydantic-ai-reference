@@ -1,4 +1,4 @@
-.PHONY: install mock test verify verify-real run stream trace demo docker clean
+.PHONY: install mock test verify verify-real run stream trace demo docker clean studio studio-mock live
 
 PY ?= python3
 MOCK_URL = http://127.0.0.1:8008/v1/
@@ -29,6 +29,15 @@ trace:              ## summarise the last trace file
 
 demo:               ## the panel demo script
 	bash scripts/demo.sh
+
+studio:             ## the FDE Studio UI against the configured endpoint (.env)
+	. .venv/bin/activate && TRACE_EXPORTER=memory nebius-agent studio
+
+studio-mock:        ## the Studio against the mock + local sandbox (needs `make mock`)
+	. .venv/bin/activate && NEBIUS_BASE_URL=$(MOCK_URL) NEBIUS_API_KEY=mock ALLOW_LOCAL_EXEC=1 DAYTONA_API_KEY= CARTESIA_API_KEY= TRACE_EXPORTER=memory nebius-agent studio
+
+live:               ## install, verify against Token Factory, run once, start the Studio (reads .env)
+	bash scripts/run_live.sh
 
 docker:             ## build the service image
 	docker build -t nebius-latency-scout:0.1.0 .
