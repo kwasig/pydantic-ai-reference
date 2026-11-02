@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .config import Settings, get_settings
+from .dedicated import DedicatedClient, dedicated_allowed
 from .provider import make_client
 from .studio_agent import SCENARIOS, build_studio_agent, build_studio_deps, integration_snippet
 from .tracing import langfuse_configured, langfuse_host, langfuse_trace_url, memory_spans
@@ -393,8 +394,18 @@ def _trim(v: Any, limit: int = 4000) -> Any:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.settings = get_settings()
+    settings = app.state.settings = get_settings()
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    if dedicated_allowed() and settings.api_key and not settings.is_mock:
+        # never leave a scout-* endpoint billing after a crash
+        try:
+            c = DedicatedClient(settings.api_key)
+            swept = await c.sweep(log=print)
+            await c.aclose()
+            if swept:
+                print(f"dedicated: swept {len(swept)} leftover endpoint(s): {', '.join(swept)}")
+        except Exception as e:  # noqa: BLE001
+            print(f"dedicated: sweep failed: {e}")
     yield
 
 
@@ -437,6 +448,7 @@ async def status() -> dict[str, Any]:
         "cartesia": {"configured": bool(os.getenv("CARTESIA_API_KEY"))},
         "tavily": {"configured": bool(s.tavily_api_key)},
         "langfuse": {"configured": langfuse_configured(), "host": langfuse_host()},
+        "dedicated": {"allowed": dedicated_allowed()},
         "trace_exporter": s.trace_exporter,
     }
 
@@ -520,8 +532,6 @@ async def langfuse_metrics(hours: int = 72, limit: int = 100) -> dict[str, Any]:
 @app.get("/api/dedicated")
 async def dedicated_info() -> dict[str, Any]:
     """What the control plane says: templates we could deploy and endpoints that exist. Read-only."""
-    from .dedicated import DedicatedClient, dedicated_allowed
-
     s: Settings = app.state.settings
     if not s.api_key or s.is_mock:
         return {"allowed": dedicated_allowed(), "templates": [], "endpoints": [], "note": "no Token Factory key"}

@@ -89,6 +89,11 @@ async def benchmark_model(
         runs: number of repeated runs (the second run also shows whether the prefix cache hit).
         max_tokens: cap on generated tokens per run.
     """
+    return await measure(ctx.deps.client, model, prompt=prompt, runs=runs, max_tokens=max_tokens)
+
+
+async def measure(client: AsyncOpenAI, model: str, *, prompt: str, runs: int = 2, max_tokens: int = 160) -> BenchmarkResult:
+    """The benchmark itself, usable against any OpenAI-compatible client (shared or dedicated endpoint)."""
     runs = max(1, min(runs, 5))
     ttfts: list[float] = []
     tps: list[float] = []
@@ -108,7 +113,7 @@ async def benchmark_model(
         t0 = time.perf_counter()
         first: float | None = None
         n = 0
-        stream = await ctx.deps.client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             max_tokens=max_tokens,
