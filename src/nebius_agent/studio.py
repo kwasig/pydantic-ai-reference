@@ -517,6 +517,29 @@ async def langfuse_metrics(hours: int = 72, limit: int = 100) -> dict[str, Any]:
     }
 
 
+@app.get("/api/dedicated")
+async def dedicated_info() -> dict[str, Any]:
+    """What the control plane says: templates we could deploy and endpoints that exist. Read-only."""
+    from .dedicated import DedicatedClient, dedicated_allowed
+
+    s: Settings = app.state.settings
+    if not s.api_key or s.is_mock:
+        return {"allowed": dedicated_allowed(), "templates": [], "endpoints": [], "note": "no Token Factory key"}
+    c = DedicatedClient(s.api_key)
+    try:
+        try:
+            templates = await c.templates()
+        except Exception as e:  # noqa: BLE001
+            templates = [{"error": f"{type(e).__name__}: {str(e)[:200]}"}]
+        try:
+            endpoints = await c.list()
+        except Exception as e:  # noqa: BLE001
+            endpoints = [{"error": f"{type(e).__name__}: {str(e)[:200]}"}]
+    finally:
+        await c.aclose()
+    return {"allowed": dedicated_allowed(), "templates": templates, "endpoints": endpoints}
+
+
 @app.get("/api/pricing")
 async def pricing() -> dict[str, Any]:
     return {"models": load_pricing(), "source": os.getenv("PRICING_FILE", "pricing.json")}
