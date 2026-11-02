@@ -262,6 +262,25 @@ These are the kind of findings an FDE hands back to the platform team. Each one 
 
 Token Factory now has its own Sandboxes (beta): one *operation* per run, fresh compute from an image, optional filesystem snapshot. Daytona stays the partner pick here because a coding agent wants what the beta does not offer yet: long-lived sandboxes with `fs.upload_file` / `process.exec` round-trips, git and LSP inside the box, preview URLs and snapshots. The sandbox interface in `sandbox.py` is one class per backend, so a Nebius Sandboxes backend is a 40-line addition when the API leaves beta.
 
+## 8b. Running it: laptop, Kubernetes, Vercel
+
+The same app runs in two modes, chosen by one environment variable:
+
+| Mode | How | What is different |
+|---|---|---|
+| **Server** (default): laptop, Docker, `deploy/k8s.yaml` | `make studio` / `nebius-agent studio` | runs live in memory, SSE reconnects, recordings can be saved, dedicated-endpoint provisioning allowed |
+| **Stateless** (`STUDIO_STATELESS=1`): Vercel or any serverless host | `api/index.py` exposes the FastAPI app | one request runs the scout and streams it (`POST /api/runs/stream`); audio and charts are sent inline; recordings in `demo/runs` replay but new ones are not saved; the sandbox is Daytona only; dedicated-endpoint provisioning is off because it outlives a serverless request |
+
+**Vercel, one time:** install the CLI (`npm i -g vercel` or use `npx`), then from the repo root
+
+```bash
+npx vercel link                 # pick / create the project
+bash scripts/vercel_env.sh      # copies the keys from .env into the project (production)
+npx vercel --prod               # deploy; vercel.json sets maxDuration=300 and routes everything to api/index.py
+```
+
+After that every `git push` to `main` deploys if the project is connected to the GitHub repo in the Vercel dashboard. Runs are capped by Vercel's function limit (300 s on Hobby, 800 s on Pro); every scenario finishes in 1–3 minutes.
+
 ## 9. Repo map
 
 ```
