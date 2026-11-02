@@ -473,9 +473,7 @@ async def langfuse_metrics(hours: int = 72, limit: int = 100) -> dict[str, Any]:
         if not t["generations"]:  # HTTP/SDK spans without a model call are not agent runs
             continue
         try:
-            lat = (
-                datetime.fromisoformat(t["end"].replace("Z", "+00:00")) - datetime.fromisoformat(t["start"].replace("Z", "+00:00"))
-            ).total_seconds()
+            lat = (datetime.fromisoformat(t["end"]) - datetime.fromisoformat(t["start"])).total_seconds()
         except ValueError:
             lat = None
         traces.append(

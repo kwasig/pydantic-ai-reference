@@ -8,179 +8,206 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap">
 <script src="/static/chart.umd.js"></script>
 <style>
-/* Brand tokens, taken from nebius.com computed styles (Nov 2026):
-   ink #052B42 (navy), lime #E0FF4F (logo block / CTA), blue #3277FF, violet #614EFA, grey #F3F4F5; Inter body, Space Mono code. */
+/* Palette from nebius.com (computed styles, Nov 2026): navy #052B42, lime #E0FF4F, blue #3277FF, violet #614EFA, grey #F3F4F5. */
 :root {
-  --brand-ink: #052b42;        /* Nebius navy: text, primary buttons, header */
-  --brand-lime: #e0ff4f;       /* Nebius lime: logo block, highlight, success */
-  --brand-blue: #3277ff;       /* links and accents */
-  --brand-violet: #614efa;     /* secondary accent (benchmarks) */
-  --brand-paper: #ffffff;
-  --brand-grey: #f3f4f5;
-  --brand: var(--brand-ink);
-  --bg: var(--brand-grey); --panel: var(--brand-paper); --panel-2: #f7f8f9; --ink: var(--brand-ink); --muted: #5b6f7e; --rule: #e0e5e9;
-  --accent: var(--brand-blue); --accent-soft: #e6eeff; --good: #1f7a3f; --good-soft: #effbd1; --warn: #9a6200; --warn-soft: #fff3dc; --bad: #c92a2a; --bad-soft: #ffe8e8;
-  --violet-soft: #ebe8ff;
-  --term-bg: #001a2b; --term-ink: #d9e6ee;
-  --sans: "Inter", "Helvetica Neue", Arial, Helvetica, sans-serif; --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif; --mono: "Space Mono", ui-monospace, Menlo, monospace;
+  --navy: #052b42; --lime: #e0ff4f; --blue: #3277ff; --violet: #614efa;
+  --bg: #f3f4f5; --panel: #ffffff; --panel-2: #f7f8f9; --ink: #052b42; --ink-2: #2e4a5c; --muted: #6b7f8d; --rule: #e3e7ea;
+  --good: #1f7a3f; --good-soft: #effbd1; --warn: #9a6200; --warn-soft: #fff3dc; --bad: #c92a2a; --bad-soft: #ffe8e8; --violet-soft: #ebe8ff; --blue-soft: #e8efff;
+  --term-bg: #06202f; --term-ink: #d9e6ee;
+  --sans: "Inter", "Helvetica Neue", Arial, sans-serif; --display: "Inter Tight", "Inter", Arial, sans-serif; --mono: "Space Mono", ui-monospace, Menlo, monospace;
+  --radius: 14px; --shadow: 0 1px 2px rgba(5,43,66,.05), 0 8px 24px -16px rgba(5,43,66,.18);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --bg: #001a2b; --panel: #0f2839; --panel-2: #143044; --ink: #eef3f6; --muted: #9fb3c0; --rule: #244457; --accent: #7fa8ff; --accent-soft: #1a3358; --good: #c9ec3a; --good-soft: #2a3a12; --warn: #f0b95d; --warn-soft: #332a14; --bad: #ff8a8a; --bad-soft: #3a1c1c; --violet-soft: #2a2358; --term-bg: #00111d; color-scheme: dark; }
+  :root:not([data-theme="light"]) { --bg: #001a2b; --panel: #0f2839; --panel-2: #143044; --ink: #eef3f6; --ink-2: #c7d4dc; --muted: #93a7b5; --rule: #214052; --good: #c9ec3a; --good-soft: #27381a; --warn: #f0b95d; --warn-soft: #332a14; --bad: #ff8a8a; --bad-soft: #3a1c1c; --violet-soft: #2a2358; --blue-soft: #16304f; --term-bg: #00111d; --shadow: none; color-scheme: dark; }
 }
 * { box-sizing: border-box }
 html, body { height: 100% }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased }
-header { height: 64px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: var(--brand-ink); color: #fff; position: sticky; top: 0; z-index: 10 }
-.logo { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 15px; letter-spacing: -.01em }
-.logo .mark { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--brand-lime); color: var(--brand-ink); font: 700 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase }
-.logo span.p { color: rgba(255,255,255,.85); font-weight: 500 }
-.logo span.p b { color: #fff; font-weight: 600 }
-.logo span.p::before { content: ""; display: inline-block; width: 1px; height: 18px; background: rgba(255,255,255,.25); margin: 0 12px -4px 0 }
-.status { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap }
-.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.8); border: 1px solid rgba(255,255,255,.14) }
-.pill i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.4); display: inline-block }
-.pill.live i { background: var(--brand-lime); box-shadow: 0 0 0 3px rgba(224,255,79,.2) } .pill.mock i { background: #f0b95d } .pill.off i { background: #ff8a8a }
-main { display: grid; grid-template-columns: 360px minmax(0, 1fr) 420px; gap: 20px; padding: 20px 24px 40px; max-width: 1720px; margin: 0 auto }
-@media (max-width: 1240px) { main { grid-template-columns: 340px minmax(0, 1fr) } .col-r { grid-column: 1 / -1 } }
-@media (max-width: 800px) { main { grid-template-columns: 1fr } }
-.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; min-width: 0; box-shadow: 0 1px 2px rgba(5,43,66,.04) }
-.card + .card { margin-top: 16px }
-h1 { font: 600 22px/1.2 var(--display); letter-spacing: -.02em; margin: 0 0 6px }
-.sub { color: var(--muted); margin: 0 0 16px }
-h2 { font: 700 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 12px 0 5px }
-select, input, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 10px }
-textarea { min-height: 120px; resize: vertical; font-size: 13.5px }
-select:focus, input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
-.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
-.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px }
-.examples button { font: 500 12.5px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel-2); color: var(--ink); cursor: pointer }
-.examples button:hover { border-color: var(--brand-ink) } .examples button.sel { border-color: var(--brand-ink); background: var(--brand-lime); color: var(--brand-ink) }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .examples button:hover { border-color: var(--brand-lime) } }
-.primary { width: 100%; margin-top: 14px; font: 600 15px var(--sans); color: #fff; background: var(--brand-ink); border: 0; border-radius: 12px; padding: 13px; cursor: pointer; transition: background .15s, color .15s }
-.primary:hover { background: var(--brand-lime); color: var(--brand-ink) } .primary[disabled] { opacity: .55; cursor: wait }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .primary { background: var(--brand-lime); color: var(--brand-ink) } :root:not([data-theme="light"]) .primary:hover { background: #eaff7a } }
-.hint { font-size: 12px; color: var(--muted); margin-top: 8px }
-.replays { display: flex; flex-wrap: wrap; gap: 6px }
-.replays button { font: 500 12.5px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px dashed var(--rule); background: transparent; color: var(--muted); cursor: pointer }
-.replays button:hover { border-color: var(--brand-violet); color: var(--brand-violet) }
+a { color: var(--blue) }
+button { font: inherit }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
+
+/* header */
+header { height: 60px; display: flex; align-items: center; gap: 14px; padding: 0 28px; background: var(--navy); color: #fff }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 15px }
+.brand .mark { display: inline-flex; align-items: center; height: 28px; padding: 0 11px; border-radius: 7px; background: var(--lime); color: var(--navy); font: 700 12.5px/1 var(--display); letter-spacing: .12em; text-transform: uppercase }
+.brand .sep { width: 1px; height: 18px; background: rgba(255,255,255,.22) }
+.brand .sub { color: rgba(255,255,255,.72); font-weight: 500 }
+.services { margin-left: auto; display: flex; gap: 14px; font-size: 12.5px; color: rgba(255,255,255,.78) }
+.services span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.services i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.3) }
+.services .live i { background: var(--lime) } .services .mock i { background: #f0b95d } .services .off { color: rgba(255,255,255,.45) }
+.services .label { display: none } @media (min-width: 1100px) { .services .label { display: inline } }
+
+/* stage 1: composer */
+#compose { max-width: 820px; margin: 56px auto 40px; padding: 0 20px }
+#compose h1 { font: 600 30px/1.15 var(--display); letter-spacing: -.025em; margin: 0 0 6px }
+#compose .lede { color: var(--muted); margin: 0 0 24px; max-width: 60ch }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px }
+@media (max-width: 760px) { .tiles { grid-template-columns: 1fr 1fr } }
+.tile { text-align: left; background: var(--panel); border: 1.5px solid var(--rule); border-radius: 12px; padding: 12px 13px; cursor: pointer; color: var(--ink); display: flex; flex-direction: column; gap: 4px; min-height: 86px }
+.tile b { font-weight: 600; font-size: 13.5px; line-height: 1.3 }
+.tile span { font-size: 12px; color: var(--muted); line-height: 1.35 }
+.tile:hover { border-color: var(--navy) }
+.tile.sel { border-color: var(--navy); background: var(--panel); box-shadow: inset 0 0 0 1px var(--navy) }
+.tile.sel b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--lime); border: 1px solid var(--navy); margin-right: 7px; vertical-align: 1px }
+.composer { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--rule) }
+.composer textarea { width: 100%; border: 0; background: transparent; color: var(--ink); font: 15px/1.55 var(--sans); padding: 18px 20px 8px; min-height: 128px; resize: vertical; display: block }
+.composer textarea:focus-visible { outline: none }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px 14px; border-top: 1px solid var(--rule) }
+.controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 6px 4px 11px }
+.controls select, .controls input { border: 0; background: transparent; color: var(--ink); font: 500 13px var(--sans); max-width: 210px; padding: 2px 4px }
+.controls input { width: 84px }
+.controls .go { margin-left: auto; background: var(--navy); color: #fff; border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s }
+.controls .go:hover { background: var(--lime); color: var(--navy) }
+.controls .go[disabled] { opacity: .5; cursor: wait }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .controls .go { background: var(--lime); color: var(--navy) } :root:not([data-theme="light"]) .controls .go:hover { background: #eaff7a } }
+.replays { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted) }
+.replays button { font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; cursor: pointer }
+.replays button:hover { border-color: var(--violet); color: var(--violet) }
+.footnote { margin-top: 26px; font-size: 12.5px; color: var(--muted); max-width: 70ch }
+
+/* stage 2: run + plan */
+#stage { display: none; grid-template-columns: minmax(0, 1fr) 460px; gap: 22px; padding: 22px 28px 48px; max-width: 1560px; margin: 0 auto }
+@media (max-width: 1100px) { #stage { grid-template-columns: 1fr } }
+body.running #compose { display: none } body.running #stage { display: grid }
+.bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: var(--ink-2); min-height: 32px }
+.bar .what { font-weight: 600; color: var(--ink) }
+.bar .ctx { color: var(--muted) }
+.bar .edit { margin-left: auto; background: transparent; border: 1px solid var(--rule); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: 500; font-size: 13px }
+.bar .edit:hover { border-color: var(--navy) }
+.panel { background: var(--panel); border-radius: var(--radius); border: 1px solid var(--rule); box-shadow: var(--shadow); min-width: 0 }
+.panel > .ph { display: flex; align-items: baseline; gap: 10px; padding: 16px 20px 0 }
+.panel > .ph h2 { font: 600 15px var(--sans); margin: 0 }
+.panel > .ph .t { margin-left: auto; font: 12.5px var(--mono); color: var(--muted) }
+h3 { font: 600 13.5px var(--sans); margin: 18px 0 6px; color: var(--ink) }
+
 /* timeline */
-.tl { display: flex; flex-direction: column; gap: 0; max-height: calc(100vh - 150px); overflow: auto; padding-right: 2px }
-.step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--rule); animation: in .18s ease-out }
-.step:last-child { border-bottom: 0 }
-@keyframes in { from { opacity: 0; transform: translateY(3px) } to { opacity: 1; transform: none } }
-.ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 11px var(--mono); background: var(--accent-soft); color: var(--accent) }
-.step.sandbox .ic { background: var(--good-soft); color: var(--good) } .step.conf .ic { background: var(--warn-soft); color: var(--warn) } .step.bench .ic { background: var(--violet-soft); color: var(--brand-violet) } .step.report .ic { background: var(--brand-lime); color: var(--brand-ink) } .step.err .ic { background: var(--bad-soft); color: var(--bad) }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .step.bench .ic { color: #b7a9ff } }
-.hd { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14.5px }
-.hd .t { margin-left: auto; font: 500 11.5px var(--mono); color: var(--muted); white-space: nowrap }
-.meta { font: 12.5px var(--mono); color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word }
-details { margin-top: 6px } summary { cursor: pointer; color: var(--muted); font-size: 12.5px }
-pre.json { font: 12px/1.45 var(--mono); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow: auto; max-height: 240px }
-.term { font: 12.5px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 10px 12px; margin-top: 8px; max-height: 240px; overflow: auto }
-.term .k { color: #8fd3ff } .term .ok { color: #7ee2a8 } .term .no { color: #ff8a8a }
-.checks { display: grid; grid-template-columns: auto auto 1fr; gap: 3px 12px; font: 12.5px var(--mono); margin-top: 8px; align-items: center }
-.b { font-weight: 600; border-radius: 5px; padding: 1px 7px; font-size: 11px; justify-self: start }
-.PASS { color: var(--good); background: var(--good-soft) } .PARTIAL { color: var(--warn); background: var(--warn-soft) } .FAIL { color: var(--bad); background: var(--bad-soft) }
-.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: sp .8s linear infinite; margin-left: 8px; vertical-align: middle }
+.tl { padding: 8px 20px 18px; max-height: calc(100vh - 170px); overflow: auto }
+.step { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; padding: 12px 0 }
+.step::before { content: ""; position: absolute; left: 10px; top: 32px; bottom: -4px; width: 2px; background: var(--rule) }
+.step:last-child::before { display: none }
+.dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--rule); background: var(--panel); display: grid; place-items: center; font: 700 10px var(--sans); color: var(--muted); margin-top: 1px }
+.step.sandbox .dot { border-color: var(--good); color: var(--good) } .step.conf .dot { border-color: var(--warn); color: var(--warn) } .step.bench .dot { border-color: var(--violet); color: var(--violet) } .step.report .dot { background: var(--lime); border-color: var(--navy); color: var(--navy) } .step.err .dot { border-color: var(--bad); color: var(--bad) } .step.done .dot { background: var(--navy); border-color: var(--navy); color: #fff }
+.hd { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14px; line-height: 1.35 }
+.hd .t { margin-left: auto; font: 12px var(--mono); color: var(--muted); white-space: nowrap }
+.meta { font-size: 13px; color: var(--ink-2); margin-top: 4px; white-space: pre-wrap; word-break: break-word; line-height: 1.5 }
+.meta.code { font-family: var(--mono); font-size: 12px; color: var(--muted) }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--rule); border-top-color: var(--blue); border-radius: 50%; animation: sp .8s linear infinite; margin-left: 8px; vertical-align: middle }
 @keyframes sp { to { transform: rotate(360deg) } }
-.badge { display: inline-block; font: 600 11px var(--sans); letter-spacing: .04em; border-radius: 6px; padding: 3px 8px }
-.badge.ok { background: var(--brand-lime); color: var(--brand-ink) } .badge.no { background: var(--bad-soft); color: var(--bad) } .badge.warn { background: var(--warn-soft); color: var(--warn) }
-/* result */
-.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 }
-.kpi { background: var(--panel-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px }
-.kpi b { display: block; font: 600 22px/1.15 var(--display); letter-spacing: -.02em } .kpi span { font-size: 11.5px; color: var(--muted) }
-ul.tight { margin: 4px 0 0; padding-left: 18px } ul.tight li { margin: 3px 0 }
-.model { font: 500 13px var(--mono); background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 6px; word-break: break-all }
-pre.code { font: 12px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 12px; overflow: auto; margin: 8px 0 0; max-height: 300px }
-.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px }
-.btn { font: 600 13px var(--sans); color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; cursor: pointer }
-.btn:hover { border-color: var(--brand-ink); background: var(--brand-lime); color: var(--brand-ink) }
-audio { width: 100%; margin-top: 8px }
-.spans { font: 12px var(--mono); display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto }
-.spans div { display: flex; gap: 8px } .spans a { color: var(--accent); text-decoration: none } .spans a:hover { text-decoration: underline } .kpi small { font-size: 13px; color: var(--muted); font-weight: 500 } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) }
+details { margin-top: 6px } summary { cursor: pointer; color: var(--muted); font-size: 12.5px; user-select: none }
+pre.json { font: 11.5px/1.45 var(--mono); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow: auto; max-height: 220px; color: var(--ink-2) }
+.term { font: 12.5px/1.55 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 10px; padding: 12px 14px; margin-top: 8px; max-height: 260px; overflow: auto }
+.term .k { color: #8fd3ff } .term .ok { color: #e0ff4f } .term .no { color: #ff8a8a }
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-top: 8px }
+.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; min-width: 0 }
+.check .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.b { font: 700 10px var(--sans); letter-spacing: .04em; border-radius: 4px; padding: 2px 6px; flex: none }
+.PASS { color: var(--good); background: var(--good-soft) } .PARTIAL { color: var(--warn); background: var(--warn-soft) } .FAIL { color: var(--bad); background: var(--bad-soft) }
+.badge { display: inline-block; font: 600 11.5px var(--sans); border-radius: 6px; padding: 3px 8px; vertical-align: middle }
+.badge.ok { background: var(--lime); color: var(--navy) } .badge.no { background: var(--bad-soft); color: var(--bad) } .badge.warn { background: var(--warn-soft); color: var(--warn) } .badge.dim { background: var(--panel-2); color: var(--muted) }
 .empty { color: var(--muted); font-size: 13.5px }
-.usage { font: 12px var(--mono); color: var(--muted); margin-top: 10px }
-canvas { max-height: 200px }
+
+/* plan */
+.plan { padding: 0 20px 20px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto }
+.plan .title { font: 600 19px/1.25 var(--display); letter-spacing: -.015em; margin: 14px 0 8px }
+.plan .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 }
+.kpi { background: var(--panel-2); border-radius: 10px; padding: 10px 12px }
+.kpi b { display: block; font: 600 21px/1.15 var(--display); letter-spacing: -.02em } .kpi b small { font-size: 12px; color: var(--muted); font-weight: 500 } .kpi span { font-size: 11.5px; color: var(--muted) }
+.model { font: 500 12.5px var(--mono); background: var(--blue-soft); color: var(--blue); padding: 2px 7px; border-radius: 6px; word-break: break-all }
+ul.tight { margin: 0; padding-left: 18px } ul.tight li { margin: 3px 0; font-size: 13.5px; color: var(--ink-2) }
+.listen { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; margin: 12px 0 }
+.listen audio { flex: 1; height: 32px; min-width: 0 }
+.listen .who { font-size: 12px; color: var(--muted); white-space: nowrap }
+pre.code { font: 12px/1.5 var(--mono); background: var(--term-bg); color: var(--term-ink); border-radius: 10px; padding: 12px; overflow: auto; margin: 6px 0 0; max-height: 260px }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px }
+.btn { font-weight: 600; font-size: 13px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; cursor: pointer }
+.btn:hover { border-color: var(--navy); background: var(--lime); color: var(--navy) }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); margin-top: 20px }
+.tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; font-weight: 500; font-size: 13px; color: var(--muted); cursor: pointer; margin-bottom: -1px }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--navy) }
+.tab { display: none; padding-top: 12px } .tab.on { display: block }
+canvas { max-height: 190px }
+.spans { font: 12px var(--mono); display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow: auto }
+.spans div { display: flex; gap: 8px } .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .spans .d { margin-left: auto; color: var(--muted) } .spans a { color: var(--blue); text-decoration: none } .spans a:hover { text-decoration: underline }
+.usage { font-size: 12px; color: var(--muted); margin-top: 10px }
 </style>
 </head>
 <body>
 <header>
-  <div class="logo"><span class="mark">Nebius</span><span class="p"><b>Integration Scout</b> · Token Factory</span></div>
-  <div class="status" id="pills"><span class="pill"><i></i>checking services…</span></div>
+  <div class="brand"><span class="mark">Nebius</span><span class="sep"></span>Integration Scout<span class="sub">for Token Factory</span></div>
+  <div class="services" id="pills"></div>
 </header>
 
-<main>
-  <aside>
-    <div class="card">
-      <h1>Describe your workload</h1>
-      <p class="sub">Get a verified, benchmarked integration on Token Factory you can ship, with a README and a spoken summary.</p>
-      <h2>Examples</h2>
-      <div class="examples" id="examples"></div>
-      <div class="row2">
-        <div><label for="workload">Workload</label><select id="workload"><option value="voice">Voice agent</option><option value="coding-agent">Coding agent</option><option value="chat">Support chat</option><option value="rag">RAG / search</option><option value="batch">Batch</option><option value="integration">Integration check</option></select></div>
-        <div><label for="framework">Framework</label><select id="framework"><option value="pydantic_ai">PydanticAI</option><option value="langgraph">LangGraph</option><option value="openai_sdk">OpenAI SDK</option></select></div>
-      </div>
-      <div class="row2">
-        <div><label for="budget">TTFT budget (ms)</label><input id="budget" type="number" placeholder="e.g. 300"></div>
-        <div><label for="volume">Volume (M tokens / month)</label><input id="volume" type="number" placeholder="optional"></div>
-      </div>
-      <label for="model">Model to evaluate</label><select id="model"></select>
-      <label for="prompt">Your ask, in your words</label>
-      <textarea id="prompt"></textarea>
-      <button class="primary" id="go">Run the scout</button>
-      <div class="hint">What runs: a real framework probe in a sandbox, the 13-check conformance kit, streaming benchmarks on your prompt, then a typed report spoken aloud.</div>
+<section id="compose">
+  <h1>What are you building on Token Factory?</h1>
+  <p class="lede">Describe the workload and the scout proves the integration: a framework probe in a sandbox, the conformance kit, benchmarks on your prompt, then a plan you can ship.</p>
+  <div class="tiles" id="examples"></div>
+  <div class="composer">
+    <textarea id="prompt" placeholder="Describe what you are building, the framework you use, and what has to be true for it to ship."></textarea>
+    <div class="controls">
+      <label>Workload <select id="workload"><option value="voice">Voice agent</option><option value="coding-agent">Coding agent</option><option value="chat">Support chat</option><option value="rag">RAG / search</option><option value="batch">Batch</option><option value="integration">Integration check</option></select></label>
+      <label>Framework <select id="framework"><option value="pydantic_ai">PydanticAI</option><option value="langgraph">LangGraph</option><option value="openai_sdk">OpenAI SDK</option></select></label>
+      <label>Model <select id="model"></select></label>
+      <label>First token ≤ <input id="budget" type="number" placeholder="ms"></label>
+      <label>Volume <input id="volume" type="number" placeholder="M tok/mo"></label>
+      <button class="go" id="go">Run the scout</button>
     </div>
-  </aside>
+  </div>
+  <div class="replays" id="replays"></div>
+  <p class="footnote">Every number in the plan comes from something the scout ran, not from the model's prose. Runs export to Langfuse and can be replayed here without a network.</p>
+</section>
 
-  <section class="card">
-    <h2>What the agent is doing</h2>
-    <div class="tl" id="tl"><div class="empty">Choose an example or describe your workload, then run. Every tool call, sandbox line, check and benchmark appears here as it happens.</div></div>
-  </section>
-
-  <aside class="col-r">
-    <div class="card"><h2>Integration plan</h2><div id="result" class="empty">The verdict, the model, the numbers, the code and the README land here.</div></div>
-    <div class="card"><h2>Measured on your prompt</h2><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Time to first token and tokens per second, per model.</div></div>
-    <div class="card"><h2>Spoken summary</h2><div id="voice" class="empty">Cartesia Sonic reads the 60-word verdict when the run finishes.</div></div>
-    <div class="card"><h2>Trace</h2><div id="trace" class="empty">OpenTelemetry spans (GenAI semantic conventions) for the run.</div></div>
-    <div class="card"><h2>Langfuse · observability partner</h2><div id="langfuse" class="empty">Loading…</div></div>
+<section id="stage">
+  <div class="bar"><span class="what" id="barWhat"></span><span class="ctx" id="barCtx"></span><button class="edit" id="edit">New run</button></div>
+  <div class="panel"><div class="ph"><h2>Run</h2><span class="t" id="runClock"></span></div><div class="tl" id="tl"></div></div>
+  <aside class="panel plan" id="planPanel">
+    <div class="ph"><h2>Plan</h2></div>
+    <div id="result" class="empty" style="padding:12px 0">Waiting for the verdict.</div>
+    <div class="tabs" id="tabs"><button class="on" data-tab="bench">Benchmarks</button><button data-tab="trace">Trace</button><button data-tab="langfuse">Langfuse</button></div>
+    <div class="tab on" id="tab-bench"><canvas id="chart"></canvas><div id="chartEmpty" class="empty">Time to first token and tokens per second, per model, measured on your prompt.</div></div>
+    <div class="tab" id="tab-trace"><div id="trace" class="empty">OpenTelemetry spans for the run.</div></div>
+    <div class="tab" id="tab-langfuse"><div id="langfuse" class="empty">Loading…</div></div>
   </aside>
-</main>
+</section>
 
 <script>
 const $ = s => document.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = o => esc(JSON.stringify(o, null, 2));
-let chart = null, benchRows = [], es = null, current = {}, scenarios = [];
+const short = m => String(m || '').split('/').pop();
+let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0;
 
-function pill(state, text) { const p = el('span', `pill ${state}`); p.innerHTML = `<i></i>${esc(text)}`; return p; }
+function svc(state, name, text) { const p = el('span', state); p.innerHTML = `<i></i>${esc(name)}<span class="label"> ${esc(text)}</span>`; p.title = `${name}: ${text}`; return p; }
 async function status() {
   const r = await fetch('/api/status').then(r => r.json()); const tf = r.token_factory;
   $('#pills').replaceChildren(
-    pill(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', `Token Factory · ${tf.mock ? 'mock' : (tf.reachable ? 'live' : 'unreachable')}`),
-    pill(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), `Daytona · ${r.daytona.configured ? 'sandbox' : (r.daytona.fallback_local ? 'local fallback' : 'off')}`),
-    pill(r.cartesia.configured ? 'live' : 'mock', `Cartesia · ${r.cartesia.configured ? 'Sonic' : 'browser fallback'}`),
-    pill(r.tavily.configured ? 'live' : 'off', `Tavily · ${r.tavily.configured ? 'on' : 'off'}`),
-    pill(r.langfuse.configured ? 'live' : 'off', `Langfuse · ${r.langfuse.configured ? 'OTLP' : 'off'}`));
+    svc(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', 'Token Factory', tf.mock ? 'mock' : (tf.reachable ? `${tf.models} models` : 'unreachable')),
+    svc(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), 'Daytona', r.daytona.configured ? 'sandboxes' : (r.daytona.fallback_local ? 'local fallback' : 'off')),
+    svc(r.cartesia.configured ? 'live' : 'mock', 'Cartesia', r.cartesia.configured ? 'Sonic' : 'browser voice'),
+    svc(r.langfuse.configured ? 'live' : 'off', 'Langfuse', r.langfuse.configured ? 'tracing' : 'off'),
+    svc(r.tavily.configured ? 'live' : 'off', 'Tavily', r.tavily.configured ? 'search' : 'off'));
   loadLangfuse();
 }
 async function init() {
   status();
   scenarios = await fetch('/api/scenarios').then(r => r.json());
   const box = $('#examples');
-  scenarios.forEach(s => { const b = el('button', '', esc(s.title)); b.onclick = () => applyScenario(s, b); box.appendChild(b); });
+  scenarios.forEach(s => { const b = el('button', 'tile', `<b>${esc(s.title.split(' · ')[0])}</b><span>${esc(s.blurb || s.title.split(' · ')[1] || '')}</span>`); b.onclick = () => applyScenario(s, b); box.appendChild(b); });
   const m = await fetch('/api/models').then(r => r.json());
-  m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = id; if (id === m.default) o.selected = true; $('#model').appendChild(o); });
+  m.models.forEach(id => { const o = el('option'); o.value = id; o.textContent = short(id); o.title = id; if (id === m.default) o.selected = true; $('#model').appendChild(o); });
   box.children[0].click();
   $('#go').onclick = () => start();
+  $('#edit').onclick = () => { document.body.classList.remove('running'); window.scrollTo(0, 0); };
+  $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('#tabs').children].forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === `tab-${b.dataset.tab}`)); if (chart) chart.resize(); };
   const rl = await fetch('/api/runs').then(r => r.json()).catch(() => ({ replays: [] }));
   if (rl.replays && rl.replays.length) {
-    const wrap = el('div', 'replays');
-    wrap.innerHTML = '<h2 style="margin-top:14px">Replay a saved live run</h2>';
-    rl.replays.forEach(r => { const b = el('button', 'replay', `▶ ${esc(r.title || r.name)}`); b.title = `${r.model} · recorded ${r.recorded_at || ''}`; b.onclick = () => start(r.name); wrap.appendChild(b); });
-    $('#examples').after(wrap);
+    const wrap = $('#replays'); wrap.appendChild(el('span', '', 'Replay a recorded live run'));
+    rl.replays.forEach(r => { const sc = scenarios.find(s => s.id === r.name); const label = sc ? sc.title.split(' · ')[0] : r.name; const b = el('button', '', `▶ ${esc(label)}`); b.title = `${r.model}, recorded ${(r.recorded_at || '').slice(0, 10)}`; b.onclick = () => start(r.name, label); wrap.appendChild(b); });
   }
 }
 function applyScenario(s, b) {
@@ -193,9 +220,14 @@ function composePrompt() {
   const ctx = `Context: workload=${w}; framework=${f}; model to evaluate=${$('#model').value}${b ? `; time-to-first-token budget=${b} ms` : ''}${v ? `; expected volume=${v}M tokens/month` : ''}.`;
   return `${ask}\n\n${ctx}`;
 }
-async function start(replay) {
+async function start(replay, replayTitle) {
   $('#go').disabled = true; current = {}; benchRows = []; drawChart();
-  $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Running…</span>'; $('#voice').innerHTML = '<span class="empty">…</span>'; $('#trace').innerHTML = '<span class="empty">…</span>';
+  $('#tl').replaceChildren(); $('#result').innerHTML = '<span class="empty">Waiting for the verdict.</span>'; $('#trace').innerHTML = '<span class="empty">Spans arrive when the run ends.</span>';
+  const sel = $('#examples .sel');
+  $('#barWhat').textContent = replay ? (replayTitle || 'Recorded run') : (sel ? sel.querySelector('b').textContent : 'Custom ask');
+  $('#barCtx').textContent = replay ? 'replaying a recorded live run' : `${$('#framework').selectedOptions[0].textContent} · ${short($('#model').value)}${$('#budget').value ? ` · first token ≤ ${$('#budget').value} ms` : ''}`;
+  document.body.classList.add('running'); window.scrollTo(0, 0);
+  runStart = Date.now(); clearInterval(clock); clock = setInterval(() => { $('#runClock').textContent = `${((Date.now() - runStart) / 1000).toFixed(0)} s`; }, 500);
   const intake = { workload: $('#workload').value, framework: $('#framework').value, budget_ms: $('#budget').value ? +$('#budget').value : null, monthly_tokens_m: $('#volume').value ? +$('#volume').value : null };
   const { run_id } = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(replay ? { replay } : { prompt: composePrompt(), model: $('#model').value, intake }) }).then(r => r.json());
   if (es) es.close();
@@ -206,96 +238,104 @@ async function start(replay) {
 }
 function step(cls, icon, title, key) {
   const s = el('div', `step ${cls}`);
-  s.innerHTML = `<div class="ic">${icon}</div><div class="body"><div class="hd"><span>${esc(title)}</span><span class="t"></span></div></div>`;
+  s.innerHTML = `<div class="dot">${icon}</div><div class="body"><div class="hd"><span>${esc(title)}</span><span class="t"></span></div></div>`;
   $('#tl').appendChild(s); if (key) current[key] = s; $('#tl').scrollTop = $('#tl').scrollHeight; return s;
 }
 const body = s => s.querySelector('.body');
-const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)}s`; };
-function run_start(d) { const s = step('', '▶', `Scout started · ${d.mock ? 'mock Token Factory' : 'Token Factory'} · ${d.model.split('/').pop()} · sandbox: ${d.sandbox}${d.replay ? ' · replay of a recorded live run' : ''}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.prompt))); }
-function tool_call(d) { const s = step('', 'fn', `${d.tool}`, `tool:${d.call_id}`); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
-function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>raw result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }
+const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)} s`; };
+const TOOL = { list_models: 'Listing served models', run_probe: 'Starting a framework probe', run_conformance: 'Starting the conformance kit', benchmark: 'Benchmarking', web_search: 'Searching the web' };
+function run_start(d) { const s = step('', '', `${d.replay ? 'Replaying a recorded run' : 'Scout started'} on ${d.mock ? 'the mock Token Factory' : 'Token Factory'}, sandbox ${d.sandbox}`); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>the ask</summary><div class="meta">${esc(d.prompt)}</div>`; body(s).appendChild(det); }
+const QUIET = new Set(['run_probe', 'run_conformance', 'benchmark']);  // these get their own richer step below
+function tool_call(d) { if (QUIET.has(d.tool)) return; const s = step('', '', `${TOOL[d.tool] || d.tool}${d.args && d.args.model ? ' ' + short(d.args.model) : ''}`, `tool:${d.call_id}`); stamp(s, d.t); if (d.args && Object.keys(d.args).length) body(s).appendChild(el('div', 'meta code', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
+function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }
+const sbKey = d => `sandbox:${d.probe || d.framework || 'last'}`;
+let lastSandbox = null;
 function sandbox(d) {
-  if (d.status === 'start') { const s = step('sandbox', '⌘', `Sandbox (${d.backend}) · ${d.framework} probe against ${d.model.split('/').pop()}`, 'sandbox'); stamp(s, d.t); body(s).appendChild(el('div', 'term')); return; }
-  const s = current['sandbox']; if (!s) return; stamp(s, d.t);
+  if (d.status === 'start') { const s = step('sandbox', '▶', `${d.framework} probe in a ${d.backend} sandbox against ${short(d.model)}`, sbKey(d)); lastSandbox = s; stamp(s, d.t); body(s).appendChild(el('div', 'term')); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
+  const s = current[sbKey(d)] || lastSandbox; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t);
   const v = el('div', 'meta');
-  v.innerHTML = `<span class="badge ${d.tool_called ? 'ok' : 'no'}">${d.tool_called ? 'Tool call verified inside the framework' : 'Tool call not observed'}</span>  exit ${d.exit_code} · probe ${d.probe_elapsed_ms ?? '–'} ms · sandbox ${Math.round(d.sandbox_elapsed_ms)} ms` + (d.tool_args ? `\nargs the framework passed: ${esc(JSON.stringify(d.tool_args))}` : '') + (d.notes ? `\n${esc(d.notes)}` : '') + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
+  v.innerHTML = `<span class="badge ${d.tool_called ? 'ok' : 'no'}">${d.tool_called ? 'Tool call verified inside the framework' : 'Tool call not observed'}</span>  exit ${d.exit_code}, probe ${d.probe_elapsed_ms ?? '–'} ms, sandbox ${Math.round(d.sandbox_elapsed_ms / 1000)} s` + (d.tool_args ? `\nArguments the framework passed: ${esc(JSON.stringify(d.tool_args))}` : '') + (d.notes ? `\n${esc(d.notes)}` : '') + (d.stderr_tail ? `<details><summary>stderr</summary><pre class="json">${esc(d.stderr_tail)}</pre></details>` : '');
   body(s).appendChild(v);
 }
-function sandbox_log(d) { const s = current['sandbox']; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); let x = esc(d.line); if (d.line.startsWith('PROBE_RESULT')) x = `<span class="ok">${x}</span>`; else if (/^(daytona|local):/.test(d.line)) x = `<span class="k">${x}</span>`; else if (/error|Traceback|failed/i.test(d.line)) x = `<span class="no">${x}</span>`; l.innerHTML = x; t.appendChild(l); t.scrollTop = t.scrollHeight; }
+function sandbox_log(d) { const s = current[sbKey(d)] || lastSandbox; if (!s) return; const t = s.querySelector('.term'); const l = el('div'); let x = esc(d.line); if (d.line.startsWith('PROBE_RESULT')) x = `<span class="ok">${x}</span>`; else if (/^(daytona|local):/.test(d.line)) x = `<span class="k">${x}</span>`; else if (/error|Traceback|failed/i.test(d.line)) x = `<span class="no">${x}</span>`; l.innerHTML = x; t.appendChild(l); t.scrollTop = t.scrollHeight; }
 function conformance(d) {
-  if (d.status === 'start') { const s = step('conf', '✓', `Conformance kit · ${d.total} checks on ${d.model.split('/').pop()}`, 'conf'); stamp(s, d.t); body(s).appendChild(el('div', 'checks')); return; }
-  const s = current['conf']; if (!s) return; stamp(s, d.t); body(s).appendChild(el('div', 'meta', `<b>${d.passed} pass · ${d.partial} partial · ${d.failed} fail</b>${d.not_pass.length ? ' · ' + esc(d.not_pass.join(', ')) : ''}`));
+  if (d.status === 'start') { const s = step('conf', '✓', `Conformance kit, ${d.total} checks on ${short(d.model)}`, 'conf'); stamp(s, d.t); body(s).appendChild(el('div', 'checks')); return; }
+  const s = current['conf']; if (!s) return; stamp(s, d.t); body(s).appendChild(el('div', 'meta', `<b>${d.passed} pass</b>${d.partial ? `, ${d.partial} partial` : ''}${d.failed ? `, ${d.failed} fail` : ''}${d.not_pass.length ? `: ${esc(d.not_pass.join(', '))}` : ''}`));
 }
-function conformance_check(d) { const g = current['conf']?.querySelector('.checks'); if (!g) return; g.appendChild(el('span', '', esc(d.name))); g.appendChild(el('span', `b ${d.status}`, d.status)); g.appendChild(el('span', '', `<span style="color:var(--muted)">${esc(d.detail).slice(0, 80)}</span>`)); }
+function conformance_check(d) { const g = current['conf']?.querySelector('.checks'); if (!g) return; const c = el('div', 'check'); c.innerHTML = `<span class="b ${d.status}">${d.status}</span><span class="n" title="${esc(d.detail)}">${esc(d.name)}</span>`; g.appendChild(c); }
 function benchmark(d) {
-  if (d.status === 'start') { const s = step('bench', '⏱', `Benchmark · ${d.model.split('/').pop()} · ${d.runs} streamed runs`, `bench:${d.model}`); stamp(s, d.t); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
-  const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `TTFT <b>${d.ttft_ms} ms</b> · <b>${d.tokens_per_s} tok/s</b> · ${d.output_tokens} output tokens · prefix-cache hit ${d.cached_prompt_tokens} tokens on the repeat`)); }
+  if (d.status === 'start') { const s = step('bench', '⏱', `Benchmarking ${short(d.model)}, ${d.runs} streamed runs`, `bench:${d.model}`); stamp(s, d.t); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); return; }
+  const s = current[`bench:${d.model}`]; if (s) { s.querySelector('.spin')?.remove(); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `<b>${d.ttft_ms} ms</b> to first token, <b>${d.tokens_per_s} tok/s</b>, ${d.output_tokens} output tokens, ${d.cached_prompt_tokens} prompt tokens served from cache on the repeat`)); }
   benchRows.push(d); drawChart();
 }
-function text(d) { let s = current['text']; if (!s) { s = step('', '…', 'Agent', 'text'); body(s).appendChild(el('div', 'meta')); } body(s).querySelector('.meta').textContent += d.delta; }
+function text(d) { let s = current['text']; if (!s) { s = step('', '', 'Scout', 'text'); body(s).appendChild(el('div', 'meta')); } body(s).querySelector('.meta').textContent += d.delta; }
 function report(d) {
   const r = d.report;
-  const s = step('report', '★', r.title); stamp(s, d.t);
-  body(s).appendChild(el('div', 'meta', `<span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>  recommended ${esc(r.recommended_model)}`));
+  const s = step('report', '★', `Plan ready: ${r.title}`); stamp(s, d.t);
+  body(s).appendChild(el('div', 'meta', `<span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>  recommends ${esc(short(r.recommended_model))}`));
   const best = (r.measurements || []).find(m => m.model === r.recommended_model) || (r.measurements || [])[0];
-  const budget = r.budget_ms ? `<span class="badge ${r.budget_met_measured ? 'ok' : (r.budget_met_measured === false ? 'warn' : '')}">${r.budget_met_measured ? `meets ${r.budget_ms} ms budget` : (r.budget_met_measured === false ? `misses ${r.budget_ms} ms budget on shared endpoint` : `${r.budget_ms} ms budget not measured`)}</span>` : '';
-  const conf = r.conformance ? `<div class="kpi"><b>${r.conformance.passed}/${r.conformance.passed + r.conformance.partial + r.conformance.failed}</b><span>checks pass${r.conformance.partial ? ` · ${r.conformance.partial} partial` : ''}${r.conformance.failed ? ` · ${r.conformance.failed} fail` : ''}</span></div>` : '';
-  const cost = r.cost ? `<p class="meta">≈ $${Number(r.cost.monthly_usd).toLocaleString()} / month at ${r.cost.monthly_tokens_m}M tokens (${esc(r.cost.assumed_split)})</p>` : '';
+  const budget = r.budget_ms ? `<span class="badge ${r.budget_met_measured ? 'ok' : (r.budget_met_measured === false ? 'warn' : 'dim')}">${r.budget_met_measured ? `meets ${r.budget_ms} ms budget` : (r.budget_met_measured === false ? `misses ${r.budget_ms} ms budget on the shared endpoint` : `${r.budget_ms} ms budget not measured`)}</span>` : '';
+  const total = r.conformance ? r.conformance.passed + r.conformance.partial + r.conformance.failed : 0;
+  const conf = r.conformance ? `<div class="kpi"><b>${r.conformance.passed}<small>/${total}</small></b><span>checks pass${r.conformance.failed ? `, ${r.conformance.failed} fail` : (r.conformance.partial ? `, ${r.conformance.partial} partial` : '')}</span></div>` : '<div class="kpi"><b>–</b><span>kit not run</span></div>';
+  const cost = r.cost ? `<p class="meta">About $${Number(r.cost.monthly_usd).toLocaleString()} a month at ${r.cost.monthly_tokens_m}M tokens (${esc(r.cost.assumed_split)})</p>` : '';
+  $('#result').className = ''; $('#result').style.padding = '';
   $('#result').innerHTML = `
-    <div style="font-size:17px;font-weight:700;letter-spacing:-.01em">${esc(r.title)}</div>
-    <div style="margin:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap"><span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>${budget}<span class="badge" style="background:var(--panel-2);color:var(--muted)">${esc(r.workload)}</span></div>
-    <div style="margin-top:8px">Model <span class="model">${esc(r.recommended_model)}</span></div>
+    <div class="title">${esc(r.title)}</div>
+    <div class="tags"><span class="badge ${r.integration_verified ? 'ok' : 'no'}">${r.integration_verified ? 'Integration verified' : 'Not verified'}</span>${budget}<span class="badge dim">${esc(r.workload)}</span></div>
+    <div>Recommended model <span class="model">${esc(r.recommended_model)}</span></div>
     <div class="kpis">
-      <div class="kpi"><b>${best ? best.ttft_ms : '–'}</b><span>ms to first token</span></div>
+      <div class="kpi"><b>${best ? best.ttft_ms : '–'}<small> ms</small></b><span>to first token</span></div>
       <div class="kpi"><b>${best ? best.tokens_per_s : '–'}</b><span>tokens / s per user</span></div>
-      ${conf || '<div class="kpi"><b>–</b><span>kit not run</span></div>'}
+      ${conf}
     </div>
-    ${r.probes?.length ? `<div class="meta">${r.probes.map(p => `${p.tool_called ? '✔' : '✘'} ${esc(p.framework)} on ${esc(p.backend)} — ${esc(p.summary)}`).join('<br>')}</div>` : ''}
+    <div id="voice"></div>
+    ${r.probes?.length ? `<div class="meta">${r.probes.map(p => `${p.tool_called ? '✔' : '✘'} ${esc(p.framework)} on ${esc(p.backend)}: ${esc(p.summary)}`).join('<br>')}</div>` : ''}
     ${cost}
-    <h2 style="margin-top:14px">Findings</h2><ul class="tight">${(r.findings || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-    <h2 style="margin-top:14px">Next steps</h2><ul class="tight">${(r.next_steps || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-    <h2 style="margin-top:14px">Integration (${esc(r.framework_key)})</h2><pre class="code" id="snip">${esc(r.integration_snippet)}</pre>
-    <div class="btns"><button class="btn" id="copySnip">Copy code</button><button class="btn" id="dlReadme">Download README.md</button><button class="btn" id="copyReadme">Copy README</button></div>
-    <div class="usage">${d.usage.requests} model requests · ${d.usage.input_tokens} in · ${d.usage.output_tokens} out · ${d.usage.cache_read_tokens} cached</div>`;
+    <h3>Findings</h3><ul class="tight">${(r.findings || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <h3>Next steps</h3><ul class="tight">${(r.next_steps || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+    <h3>Integration code (${esc(r.framework_key)})</h3><pre class="code" id="snip">${esc(r.integration_snippet)}</pre>
+    <div class="btns"><button class="btn" id="copySnip">Copy code</button><button class="btn" id="dlReadme">Download INTEGRATION.md</button></div>
+    <div class="usage">${d.usage.requests} model requests, ${d.usage.input_tokens.toLocaleString()} tokens in, ${d.usage.output_tokens.toLocaleString()} out, ${d.usage.cache_read_tokens.toLocaleString()} served from cache</div>`;
   $('#copySnip').onclick = () => copy(r.integration_snippet, $('#copySnip'));
-  $('#copyReadme').onclick = () => copy(r.readme_md, $('#copyReadme'));
   $('#dlReadme').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.readme_md], { type: 'text/markdown' })); a.download = 'INTEGRATION.md'; a.click(); };
+  if (pendingVoice) voice(pendingVoice);
 }
 function copy(text, btn) { const done = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1200); }; (navigator.clipboard?.writeText(text) || Promise.reject()).then(done).catch(() => { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }); }
+let pendingVoice = null;
 function voice(d) {
-  if (d.status === 'start') { const s = step('voice', '♪', 'Speaking the verdict', 'voice'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `“${esc(d.text)}”`)); return; }
+  if (d.status === 'start') { const s = step('', '♪', 'Speaking the verdict', 'voice'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', `“${esc(d.text)}”`)); return; }
   const s = current['voice']; if (s) stamp(s, d.t);
-  const v = $('#voice');
-  if (d.mode === 'cartesia' && d.url) v.innerHTML = `<span class="badge ok">Cartesia ${esc(d.model || '')}</span> <span class="empty">synthesised in ${Math.round(d.elapsed_ms)} ms</span><audio controls autoplay src="${d.url}"></audio><p class="meta">“${esc(d.text)}”</p>`;
-  else { v.innerHTML = `<span class="badge warn">Browser voice</span> <span class="empty">${esc(d.error || 'set CARTESIA_API_KEY for Sonic')}</span><p class="meta">“${esc(d.text)}”</p><button class="btn" id="say">Play</button>`; const say = () => { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(d.text)); } catch (e) {} }; $('#say').onclick = say; say(); }
+  const v = $('#voice'); if (!v) { pendingVoice = d; return; } pendingVoice = null;
+  if (d.mode === 'cartesia' && d.url) v.innerHTML = `<div class="listen"><audio controls autoplay src="${d.url}"></audio><span class="who">Cartesia ${esc(d.model || '')}</span></div>`;
+  else { v.innerHTML = `<div class="listen"><button class="btn" id="say">Play</button><span class="who">browser voice${d.error ? ' (' + esc(d.error) + ')' : ''}</span></div>`; const say = () => { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(d.text)); } catch (e) {} }; $('#say').onclick = say; say(); }
 }
 async function loadLangfuse() {
   const box = $('#langfuse'); if (!box) return;
   const m = await fetch('/api/langfuse/metrics').then(r => r.json()).catch(() => null);
-  if (!m || !m.configured) { box.innerHTML = '<span class="empty">Set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY to export every run and read metrics back.</span>'; return; }
+  if (!m || !m.configured) { box.innerHTML = '<span class="empty">Add Langfuse keys to export every run and read metrics back here.</span>'; return; }
   if (m.error) { box.innerHTML = `<span class="badge warn">Langfuse API</span> <span class="empty">${esc(m.error)}</span>`; return; }
-  box.innerHTML = `<div class="kpis"><div class="kpi"><b>${m.count}</b><span>traces · last ${m.hours}h</span></div><div class="kpi"><b>${m.model_calls}</b><span>model calls traced</span></div><div class="kpi"><b>${m.p95_latency_s ?? '–'}<small> s</small></b><span>p95 run latency</span></div></div>
-    <div class="spans">${m.traces.map(t => `<div><a class="n" href="${t.url}" target="_blank" rel="noopener">${esc(t.name)} · ${esc((t.models[0] || '').split('/').pop())}</a><span class="d">${t.latency_s != null ? t.latency_s.toFixed(1) + ' s' : ''} · ${t.generations} gen</span></div>`).join('')}</div>
-    <div class="usage">${m.observations} observations read back from ${esc(m.host.replace('https://', ''))} · /api/public/v2/observations</div>`;
+  box.innerHTML = `<div class="kpis"><div class="kpi"><b>${m.count}</b><span>traces, last ${m.hours} h</span></div><div class="kpi"><b>${m.model_calls}</b><span>model calls traced</span></div><div class="kpi"><b>${m.p95_latency_s ?? '–'}<small> s</small></b><span>p95 run latency</span></div></div>
+    <div class="spans">${m.traces.map(t => `<div><a class="n" href="${t.url}" target="_blank" rel="noopener">${esc(t.name)} ${esc(short(t.models[0] || ''))}</a><span class="d">${t.latency_s != null ? t.latency_s.toFixed(1) + ' s' : ''}, ${t.generations} calls</span></div>`).join('')}</div>
+    <div class="usage">${m.observations} observations read back from ${esc(m.host.replace('https://', ''))}</div>`;
 }
 function trace(d) {
-  const t = $('#trace'); if (!d.spans.length) { t.innerHTML = '<span class="empty">no spans captured</span>'; return; }
+  const t = $('#trace'); if (!d.spans.length) { t.innerHTML = '<span class="empty">No spans captured.</span>'; return; }
   if (d.langfuse && d.langfuse.exported) setTimeout(loadLangfuse, 4000);
   const byId = {}; d.spans.forEach(s => byId[s.span_id] = s);
   const depth = s => { let n = 0, p = s.parent_span_id; while (p && byId[p]) { n++; p = byId[p].parent_span_id; } return n; };
-  const lf = d.langfuse && d.langfuse.url ? ` · <a href="${d.langfuse.url}" target="_blank" rel="noopener">open in Langfuse ↗</a>` : (d.trace_id ? ` · trace ${d.trace_id.slice(0, 12)}…` : '');
-  t.innerHTML = `<div class="empty" style="margin-bottom:6px">${d.count} spans · gen_ai.* attributes${lf}</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
+  const lf = d.langfuse && d.langfuse.url ? ` <a href="${d.langfuse.url}" target="_blank" rel="noopener">Open in Langfuse</a>` : '';
+  t.innerHTML = `<div class="empty" style="margin-bottom:8px">${d.count} spans with gen_ai attributes.${lf}</div><div class="spans">${d.spans.sort((a, b) => a.start_ns - b.start_ns).map(s => `<div><span class="n" style="padding-left:${depth(s) * 14}px">${esc(s.name)}</span><span class="d">${s.duration_ms} ms</span></div>`).join('')}</div>`;
 }
 function error(d) { const s = step('err', '!', 'Run failed'); stamp(s, d.t); body(s).appendChild(el('div', 'meta', esc(d.message))); $('#result').innerHTML = `<span class="badge no">Error</span> <span class="empty">${esc(d.message)}</span>`; }
-function run_end(d) { const s = step('', '■', `Done in ${d.elapsed_s}s`); stamp(s, d.t); $('#go').disabled = false; es && es.close(); }
+function run_end(d) { const s = step('done', '✓', `Done in ${d.elapsed_s} s`); stamp(s, d.t); $('#go').disabled = false; clearInterval(clock); $('#runClock').textContent = `${d.elapsed_s} s`; es && es.close(); }
 function drawChart() {
   $('#chartEmpty').style.display = benchRows.length ? 'none' : 'block';
-  if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${r.model}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }
+  if (typeof Chart === 'undefined') { $('#chartEmpty').style.display = 'block'; $('#chartEmpty').textContent = benchRows.map(r => `${short(r.model)}: ${r.ttft_ms} ms TTFT, ${r.tokens_per_s} tok/s`).join(' · ') || 'Time to first token and tokens per second, per model.'; return; }
   const ink = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
-  const data = { labels: benchRows.map(r => r.model.split('/').pop()), datasets: [
-    { label: 'TTFT (ms)', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(5,43,66,.85)', yAxisID: 'y' },
-    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(97,78,250,.75)', yAxisID: 'y1' } ] };
-  const options = { responsive: true, animation: { duration: 200 }, plugins: { legend: { labels: { color: ink, boxWidth: 10 } } }, scales: { x: { ticks: { color: ink }, grid: { display: false } }, y: { position: 'left', title: { display: true, text: 'ms', color: ink }, ticks: { color: ink }, grid: { color: 'rgba(128,128,128,.15)' } }, y1: { position: 'right', title: { display: true, text: 'tok/s', color: ink }, ticks: { color: ink }, grid: { drawOnChartArea: false } } } };
+  const data = { labels: benchRows.map(r => short(r.model)), datasets: [
+    { label: 'ms to first token', data: benchRows.map(r => r.ttft_ms), backgroundColor: 'rgba(5,43,66,.85)', yAxisID: 'y', borderRadius: 4 },
+    { label: 'tokens / s', data: benchRows.map(r => r.tokens_per_s), backgroundColor: 'rgba(97,78,250,.75)', yAxisID: 'y1', borderRadius: 4 } ] };
+  const options = { responsive: true, animation: { duration: 200 }, plugins: { legend: { labels: { color: ink, boxWidth: 10, font: { family: 'Inter' } } } }, scales: { x: { ticks: { color: ink, font: { family: 'Inter', size: 11 } }, grid: { display: false } }, y: { position: 'left', ticks: { color: ink, font: { size: 11 } }, grid: { color: 'rgba(128,128,128,.15)' } }, y1: { position: 'right', ticks: { color: ink, font: { size: 11 } }, grid: { drawOnChartArea: false } } } };
   if (chart) { chart.data = data; chart.update(); } else { chart = new Chart($('#chart'), { type: 'bar', data, options }); }
 }
 init();

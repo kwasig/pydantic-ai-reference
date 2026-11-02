@@ -132,10 +132,20 @@ async def run_probe(
     model = await _served_model(ctx, model)
     emit = ctx.deps.emit
     sandbox = ctx.deps.sandbox
-    emit("sandbox", {"status": "start", "backend": sandbox.name, "framework": probe.framework, "model": model, "files": [probe.file]})
+    emit(
+        "sandbox",
+        {
+            "status": "start",
+            "probe": framework,
+            "backend": sandbox.name,
+            "framework": probe.framework,
+            "model": model,
+            "files": [probe.file],
+        },
+    )
 
     def log(line: str) -> None:
-        emit("sandbox_log", {"line": line})
+        emit("sandbox_log", {"probe": framework, "line": line})
 
     env = {"NEBIUS_BASE_URL": s.base_url, "NEBIUS_API_KEY": s.api_key or "mock", "NEBIUS_MODEL": model, "PYDANTIC_AI_NO_BANNER": "1"}
     command = probe.command if sandbox.name == "local" else f"{probe.install} && {probe.command}"
@@ -171,7 +181,7 @@ async def run_probe(
         "stderr_tail": result.stderr[-600:] if result.stderr else "",
         "notes": probe.notes + (f"; {fallback_note}" if fallback_note else ""),
     }
-    emit("sandbox", {"status": "done", **outcome})
+    emit("sandbox", {"status": "done", "probe": framework, **outcome})
     return outcome
 
 
@@ -183,7 +193,6 @@ async def run_conformance(ctx: RunContext[StudioDeps], model: str | None = None)
     """
     from conformance.checks import ALL_CHECKS
 
-    s = ctx.deps.settings
     model = await _served_model(ctx, model)
     emit = ctx.deps.emit
     client: AsyncOpenAI = ctx.deps.client
