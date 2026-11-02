@@ -16,14 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "${{ matrix.python }}" }
+        with:
+          python-version: "${{ matrix.python }}"
       - run: pip install -e ".[dev]"
       - run: python -m pytest
       - run: |
           (uvicorn mock_server.server:app --port 8008 --log-level warning &) && sleep 2
           NEBIUS_BASE_URL=http://127.0.0.1:8008/v1/ NEBIUS_API_KEY=mock TRACE_EXPORTER=none nebius-agent verify --json reports/mock.json
       - uses: actions/upload-artifact@v4
-        with: { name: conformance-mock-${{ matrix.python }}, path: reports/mock.json }
+        with:
+          name: conformance-mock-${{ matrix.python }}
+          path: reports/mock.json
 
   token-factory:
     name: conformance against Token Factory (needs NEBIUS_API_KEY secret)
@@ -36,7 +39,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
       - run: pip install -e ".[dev]"
       - name: skip without secret
         if: ${{ env.NEBIUS_API_KEY == '' }}
@@ -46,4 +50,6 @@ jobs:
         run: nebius-agent verify --json "reports/$(echo "$NEBIUS_MODEL" | tr '/' '_').json"
       - uses: actions/upload-artifact@v4
         if: ${{ always() && env.NEBIUS_API_KEY != '' }}
-        with: { name: conformance-token-factory, path: reports/*.json }
+        with:
+          name: conformance-token-factory
+          path: reports/*.json
