@@ -60,15 +60,17 @@ def _pick(d: dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 
 def _flatten_status(item: dict[str, Any]) -> tuple[str, str]:
-    """Return (lifecycle, readiness) as lower-case strings from whatever shape the API uses."""
+    """Return (lifecycle, readiness) as lower-case strings. Live shape (Nov 2026):
+    item["deployment"] = {"status": "starting|running|...", "readiness": "not_ready|partially_ready|ready", "ready_replicas": n}."""
+    dep = item.get("deployment") if isinstance(item.get("deployment"), dict) else {}
+    if dep:
+        return str(_pick(dep, "status", "lifecycle", default="")).lower(), str(_pick(dep, "readiness", "ready", default="")).lower()
     status = _pick(item, "status", "state", "lifecycle", default={})
     if isinstance(status, dict):
-        life = str(_pick(status, "lifecycle", "state", "phase", "status", default="")).lower()
-        ready = str(_pick(status, "readiness", "ready", "readiness_status", default="")).lower()
-    else:
-        life = str(status).lower()
-        ready = str(_pick(item, "readiness", "readiness_status", "ready", default="")).lower()
-    return life, ready
+        return str(_pick(status, "lifecycle", "state", "phase", "status", default="")).lower(), str(
+            _pick(status, "readiness", "ready", default="")
+        ).lower()
+    return str(status).lower(), str(_pick(item, "readiness", "readiness_status", "ready", default="")).lower()
 
 
 class DedicatedClient:
@@ -151,7 +153,7 @@ class DedicatedClient:
         region = body["region"]
         base_url = os.getenv("NEBIUS_DEDICATED_BASE_URL") or f"https://api.tokenfactory.{region}.nebius.com/v1"
         return DedicatedEndpoint(
-            endpoint_id=str(_pick(d, "endpoint_id", "id")),
+            endpoint_id=str(_pick(d, "id", "endpoint_id", default="")),
             routing_key=str(_pick(d, "routing_key", "model", default="")),
             name=body["name"],
             model_name=body["model_name"],
@@ -162,12 +164,18 @@ class DedicatedClient:
             raw=d,
         )
 
-    async def status(self, endpoint_id: str) -> tuple[str, str, dict[str, Any]]:
+    async def find(self, endpoint_id: str | None = None, name: str | None = None) -> dict[str, Any] | None:
         for item in await self.list():
-            if str(_pick(item, "endpoint_id", "id")) == endpoint_id:
-                life, ready = _flatten_status(item)
-                return life, ready, item
-        return "missing", "", {}
+            if (endpoint_id and str(_pick(item, "id", "endpoint_id")) == endpoint_id) or (name and item.get("name") == name):
+                return item
+        return None
+
+    async def status(self, endpoint_id: str, name: str | None = None) -> tuple[str, str, dict[str, Any]]:
+        item = await self.find(endpoint_id, name)
+        if not item:
+            return "missing", "", {}
+        life, ready = _flatten_status(item)
+        return life, ready, item
 
     async def wait_ready(self, ep: DedicatedEndpoint, timeout_s: int = 900, poll_s: int = 10, log=None) -> bool:
         """Poll until readiness says ready, then confirm with one real chat call (404 while routing is not live)."""
@@ -175,7 +183,11 @@ class DedicatedClient:
         last = ""
         seen_raw = False
         while time.time() - t0 < timeout_s:
-            life, ready, raw = await self.status(ep.endpoint_id)
+            life, ready, raw = await self.status(ep.endpoint_id, ep.name)
+            if raw and not ep.routing_key:
+                ep.routing_key = str(raw.get("routing_key") or "")
+            if raw and str(_pick(raw, "id", "endpoint_id", default="")):
+                ep.endpoint_id = str(_pick(raw, "id", "endpoint_id"))
             if raw and not seen_raw and log:
                 seen_raw = True
                 log(
@@ -185,7 +197,7 @@ class DedicatedClient:
             if (life, ready) != last and log:
                 log(f"dedicated: {ep.name} lifecycle={life or '?'} readiness={ready or '?'} ({int(time.time() - t0)} s)")
                 last = (life, ready)
-            if ready.startswith("ready") or (not ready and life in ("running", "ready")):
+            if ready == "ready" or ready.startswith("partially") or (not ready and life in ("running", "ready")):
                 if await self._probe(ep):
                     ep.ready_at = time.time()
                     return True
@@ -204,7 +216,11 @@ class DedicatedClient:
         except httpx.HTTPError:
             return False
 
-    async def delete(self, endpoint_id: str) -> bool:
+    async def delete(self, endpoint_id: str, name: str | None = None) -> bool:
+        if name:
+            item = await self.find(endpoint_id, name)
+            if item:
+                endpoint_id = str(_pick(item, "id", "endpoint_id", default=endpoint_id))
         r = await self._h.delete(f"/v0/dedicated_endpoints/{endpoint_id}")
         if r.status_code in (200, 202, 204, 404):
             return True
@@ -218,7 +234,7 @@ class DedicatedClient:
         for item in await self.list():
             name = str(_pick(item, "name", default=""))
             if name.startswith(SCOUT_PREFIX):
-                eid = str(_pick(item, "endpoint_id", "id"))
+                eid = str(_pick(item, "id", "endpoint_id"))
                 if await self.delete(eid):
                     gone.append(name)
                     if log:
