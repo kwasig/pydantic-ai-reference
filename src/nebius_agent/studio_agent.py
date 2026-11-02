@@ -369,7 +369,7 @@ async def provision_dedicated_endpoint(
         return {"allowed": True, "model": model, "provisioned": ep is not None, "error": f"{type(e).__name__}: {str(e)[:300]}"}
     finally:
         if ep is not None:
-            ok = await client.delete(ep.endpoint_id)
+            ok = await client.delete(ep.endpoint_id, ep.name)
             emit(
                 "dedicated",
                 {
