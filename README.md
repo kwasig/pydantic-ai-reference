@@ -59,6 +59,8 @@ The four example scenarios target the newest models Token Factory serves (MiniMa
 
 ![A recorded live run replayed: Daytona sandbox probe with the tool call verified, the 13-check kit, two benchmarks, and the plan with Cartesia's spoken verdict](docs/img/scout-sandbox.png)
 
+![The scout provisions a dedicated 1× H200 endpoint for Qwen3-30B, waits for readiness, warms it, benchmarks (111 ms TTFT vs 268 ms shared) and tears it down after 0.1 billable minutes](docs/img/scout-dedicated.png)
+
 ![The coding-agent session, recorded live: Kimi-K3 in a Daytona sandbox writes metrics.py and tests, runs pytest (6 pass), renders chart.png; the chart comes back into the plan](docs/img/scout-session.png)
 
 The Studio ("Nebius Integration Scout") is the FDE motion as a product for a partner: describe the workload (type, framework, TTFT budget, volume) or pick an example, and the
@@ -238,7 +240,8 @@ to a field-to-product ticket when it does not. Adding a framework later means re
 | Token Factory · `moonshotai/Kimi-K3` | — | 9/13 · 3 FAIL | `chat.basic`, `tools.choice_named`, `structured.json_schema`; yet it completed the full coding session in Daytona (code, 6 tests green, chart) with 352 ms TTFT and ~210 tok/s end to end |
 | Token Factory · `moonshotai/Kimi-K2.7-Code` (benchmark) | — | — | reasoning model: on a 160-token budget every token was reasoning and no content arrived; 32 s to the first visible token. The benchmark now says so instead of reporting 3,400 tok/s |
 | Token Factory · `MiniMaxAI/MiniMax-M3.1-Flash` | — | probe ✔ | PydanticAI tool call verified; **3.2 s TTFT** on the shared endpoint (10× a voice budget) |
-| **Daytona** | — | ✔ | ephemeral `python:3.12-slim` sandboxes created, probe uploaded + executed, deleted; PydanticAI, LangGraph and OpenAI-SDK probes all reported `tool_called=true` |
+| **Token Factory dedicated endpoint** · `Qwen3-30B-A3B-Instruct-2507` on 1× H200 | — | ✔ | provisioned by the scout (template catalogue → smallest allowed config), `ready` in 5 min 24 s, cold first request 1,279 ms, **warm TTFT 111 ms vs 268 ms shared**, 157 tok/s end to end, deleted after 0.1 billable minutes |
+| **Daytona** | — | ✔ | ephemeral `python:3.12-slim` sandboxes created, probe uploaded + executed, deleted; PydanticAI, LangGraph and OpenAI-SDK probes all reported `tool_called=true`; the coding session (Kimi-K3) wrote code + tests, 6 green, rendered a chart |
 | **Cartesia** | — | ✔ | `sonic-3` speaks every verdict (≈2.7–3.7 s per 60 words) |
 | **Langfuse** (`us.cloud.langfuse.com`) | — | ✔ | every Studio run exported over OTLP; the Studio reads traces/latency/model-call counts back through `/api/public/v2/observations` |
 | **Tavily** | — | ✔ | live rate-limit / pricing lookups inside the migration scenario |
@@ -253,6 +256,7 @@ These are the kind of findings an FDE hands back to the platform team. Each one 
 2. **Parallel tool-call deltas can land on the wrong index.** With five tool calls in one streamed turn, the tail of call N's JSON arguments arrived on call N+1 (`…"max_tokens": 16` / `0}{"query": …`), so both calls failed validation. New check `streaming.parallel_tool_call_deltas`; the Studio's orchestrator runs its own model requests non-streamed (`agent.iter`) and keeps streaming on the partner-facing legs.
 3. **Several new models are not agent-ready yet.** Kimi-K3 and Kimi-K2.7-Code return empty `content` on plain chat and ignore `tool_choice`; DeepSeek-V4.1-Flash ignores `json_schema`. The kit makes this a table instead of a support ticket.
 4. **Cartesia SDK 4.x** returns a coroutine from `tts.bytes()`; `voice.py` accepts bytes, iterators or awaitables.
+5. **Dedicated endpoints answer cold.** The first request on a freshly `ready` replica took 1.3–5.4 s to first token; after five requests the same endpoint served 111 ms. The scout measures cold once, warms, then reports the warm number and says so. The control plane's live shape also differs from the docs (`id` not `endpoint_id`; status under `deployment.status` / `deployment.readiness`; `routing_key` is `dedicated/<model>-<suffix>`), which `dedicated.py` now follows.
 
 ### Daytona next to Nebius Sandboxes
 
