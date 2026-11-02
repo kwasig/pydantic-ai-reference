@@ -346,10 +346,25 @@ async def provision_dedicated_endpoint(
         from openai import AsyncOpenAI
 
         ded_client = AsyncOpenAI(base_url=ep.base_url, api_key=s.api_key)
-        emit("benchmark", {"status": "start", "model": f"{model} (dedicated)", "runs": 3})
-        r = await measure(ded_client, ep.routing_key, prompt=prompt, runs=3, max_tokens=160)
+        # a freshly loaded replica answers its first requests slowly (weights paged in, caches empty):
+        # measure cold once, then warm it and measure what the partner would actually see
+        cold = await measure(ded_client, ep.routing_key, prompt=prompt, runs=1, max_tokens=160)
+        log(f"dedicated: cold first request {cold.ttft_ms} ms to first token; warming up")
+        for _ in range(4):
+            try:
+                await ded_client.chat.completions.create(
+                    model=ep.routing_key, messages=[{"role": "user", "content": prompt}], max_tokens=48
+                )
+            except Exception as e:  # noqa: BLE001
+                log(f"dedicated: warm-up request failed: {type(e).__name__}")
+        emit("benchmark", {"status": "start", "model": f"{model} (dedicated)", "runs": 4})
+        r = await measure(ded_client, ep.routing_key, prompt=prompt, runs=4, max_tokens=160)
         d = r.model_dump()
         d["model"] = f"{model} (dedicated)"
+        d["cold_ttft_ms"] = cold.ttft_ms
+        d["stream_note"] = f"warm, after 5 requests; cold first request was {cold.ttft_ms:.0f} ms" + (
+            f"; {d['stream_note']}" if d.get("stream_note") else ""
+        )
         emit("benchmark", {"status": "done", **d})
         return {
             "allowed": True,
@@ -361,6 +376,7 @@ async def provision_dedicated_endpoint(
             "region": ep.region,
             "provision_s": provision_s,
             "dedicated_benchmark": d,
+            "cold_first_request_ttft_ms": cold.ttft_ms,
             "billable_minutes": ep.billable_minutes,
             "torn_down": True,
         }

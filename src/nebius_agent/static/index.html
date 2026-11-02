@@ -304,7 +304,8 @@ function benchmark(d) {
     const bursty = (d.stream_note || '').startsWith('bursty');
     const rate = bursty ? `<b>${d.end_to_end_tokens_per_s} tok/s</b> end to end` : `<b>${d.tokens_per_s} tok/s</b> decode${d.end_to_end_tokens_per_s ? `, ${d.end_to_end_tokens_per_s} tok/s end to end` : ''}`;
     const reason = d.reasoning_tokens ? `, ${d.reasoning_tokens} of them reasoning` : (d.reasoning_chunks ? `, reasoning first` : '');
-    body(s).appendChild(el('div', 'meta', `<b>${d.ttft_ms} ms</b> to first token, ${rate}, ${d.output_tokens} output tokens${reason}, ${d.cached_prompt_tokens} prompt tokens served from cache on the repeat${d.stream_note ? `<br><span class="badge warn">${esc(d.stream_note)}</span>` : ''}`)); }
+    const noteCls = (d.stream_note || '').startsWith('warm') ? 'dim' : 'warn';
+    body(s).appendChild(el('div', 'meta', `<b>${d.ttft_ms} ms</b> to first token, ${rate}, ${d.output_tokens} output tokens${reason}, ${d.cached_prompt_tokens} prompt tokens served from cache on the repeat${d.stream_note ? `<br><span class="badge ${noteCls}">${esc(d.stream_note)}</span>` : ''}`)); }
   benchRows.push(d); drawChart();
 }
 function text(d) { let s = current['text']; if (!s) { s = step('', '', 'Scout', 'text'); body(s).appendChild(el('div', 'meta')); } body(s).querySelector('.meta').textContent += d.delta; }
