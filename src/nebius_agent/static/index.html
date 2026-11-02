@@ -183,15 +183,15 @@ const short = m => String(m || '').split('/').pop();
 let chart = null, benchRows = [], es = null, current = {}, scenarios = [], clock = null, runStart = 0;
 
 function svc(state, name, text) { const p = el('span', state); p.innerHTML = `<i></i>${esc(name)}<span class="label"> ${esc(text)}</span>`; p.title = `${name}: ${text}`; return p; }
-async function status() {
-  const r = await fetch('/api/status').then(r => r.json()); const tf = r.token_factory;
+async function status(snapshot) {
+  const r = snapshot || await fetch('/api/status').then(r => r.json()); const tf = r.token_factory;
   $('#pills').replaceChildren(
     svc(tf.reachable ? (tf.mock ? 'mock' : 'live') : 'off', 'Token Factory', tf.mock ? 'mock' : (tf.reachable ? `${tf.models} models` : 'unreachable')),
     svc(r.daytona.configured ? 'live' : (r.daytona.fallback_local ? 'mock' : 'off'), 'Daytona', r.daytona.configured ? 'sandboxes' : (r.daytona.fallback_local ? 'local fallback' : 'off')),
     svc(r.cartesia.configured ? 'live' : 'mock', 'Cartesia', r.cartesia.configured ? 'Sonic' : 'browser voice'),
     svc(r.langfuse.configured ? 'live' : 'off', 'Langfuse', r.langfuse.configured ? 'tracing' : 'off'),
     svc(r.tavily.configured ? 'live' : 'off', 'Tavily', r.tavily.configured ? 'search' : 'off'));
-  loadLangfuse();
+  if (!snapshot) loadLangfuse();
 }
 async function init() {
   status();
@@ -244,7 +244,7 @@ function step(cls, icon, title, key) {
 const body = s => s.querySelector('.body');
 const stamp = (s, t) => { s.querySelector('.t').textContent = `${t.toFixed(1)} s`; };
 const TOOL = { list_models: 'Listing served models', run_probe: 'Starting a framework probe', run_conformance: 'Starting the conformance kit', benchmark: 'Benchmarking', web_search: 'Searching the web' };
-function run_start(d) { const s = step('', '', `${d.replay ? 'Replaying a recorded run' : 'Scout started'} on ${d.mock ? 'the mock Token Factory' : 'Token Factory'}, sandbox ${d.sandbox}`); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>the ask</summary><div class="meta">${esc(d.prompt)}</div>`; body(s).appendChild(det); }
+function run_start(d) { if (d.services) status(d.services); const s = step('', '', `${d.replay ? 'Replaying a recorded run' : 'Scout started'} on ${d.mock ? 'the mock Token Factory' : 'Token Factory'}, sandbox ${d.sandbox}`); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>the ask</summary><div class="meta">${esc(d.prompt)}</div>`; body(s).appendChild(det); }
 const QUIET = new Set(['run_probe', 'run_conformance', 'benchmark']);  // these get their own richer step below
 function tool_call(d) { if (QUIET.has(d.tool)) return; const s = step('', '', `${TOOL[d.tool] || d.tool}${d.args && d.args.model ? ' ' + short(d.args.model) : ''}`, `tool:${d.call_id}`); stamp(s, d.t); if (d.args && Object.keys(d.args).length) body(s).appendChild(el('div', 'meta code', esc(JSON.stringify(d.args)))); body(s).querySelector('.hd span').appendChild(el('span', 'spin')); }
 function tool_result(d) { const s = current[`tool:${d.call_id}`]; if (!s) return; s.querySelector('.spin')?.remove(); stamp(s, d.t); const det = el('details'); det.innerHTML = `<summary>result</summary><pre class="json">${fmt(d.result)}</pre>`; body(s).appendChild(det); }

@@ -55,7 +55,9 @@ make studio-mock     # same UI against the mock + local sandbox, no keys
 
 The four example scenarios target the newest models Token Factory serves (MiniMax-M3.1-Flash, Kimi-K2.7-Code, DeepSeek-V4.1-Flash, Kimi-K3) and compare them with the verified default, `Qwen/Qwen3-235B-A22B-Instruct-2507`, which is also the model the scout itself runs on. The "Model to evaluate" selector changes what is probed, benchmarked and checked, not the orchestrator.
 
-![Nebius Integration Scout: a live run against Token Factory, Daytona, Cartesia and Langfuse, showing the sandbox probe, the conformance kit, benchmarks, the integration plan with code and README, and the trace](docs/img/studio-live.png)
+![Integration Scout: describe the workload, pick a scenario, run](docs/img/scout-compose.png)
+
+![A recorded live run replayed: Daytona sandbox probe with the tool call verified, the 13-check kit, two benchmarks, and the plan with Cartesia's spoken verdict](docs/img/scout-sandbox.png)
 
 The Studio ("Nebius Integration Scout") is the FDE motion as a product for a partner: describe the workload (type, framework, TTFT budget, volume) or pick an example, and the
 agent **proves** things rather than describing them:
