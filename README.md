@@ -46,16 +46,16 @@ make test                                        # 15 tests, starts its own mock
 ```
 
 
-## 1b. The Studio: watch the agent work
+## 1b. Integration Scout: the Studio UI
 
 ```bash
 make studio          # http://127.0.0.1:8090  (reads .env: NEBIUS_API_KEY, DAYTONA_API_KEY, CARTESIA_API_KEY, TAVILY_API_KEY)
 make studio-mock     # same UI against the mock + local sandbox, no keys
 ```
 
-![Nebius FDE Studio: a run against the mock, showing the sandbox probe, the conformance kit, a benchmark, the report and the trace](docs/img/studio-run.png)
+![Nebius Integration Scout: a run against the mock, showing the sandbox probe, the conformance kit, a benchmark, the integration plan with code and README, and the trace](docs/img/studio-run.png)
 
-The Studio is the FDE motion as a product: pick a scenario (or type the partner's ask), and the
+The Studio ("Nebius Integration Scout") is the FDE motion as a product for a partner: describe the workload (type, framework, TTFT budget, volume) or pick an example, and the
 agent **proves** things rather than describing them:
 
 | Step | What actually happens | Where |
@@ -64,7 +64,7 @@ agent **proves** things rather than describing them:
 | `run_conformance` | the 12-check kit, each check streaming into the UI as PASS / PARTIAL / FAIL | `conformance/` |
 | `benchmark` | TTFT and tokens/s on the partner's own prompt, charted live | `tools.py` |
 | `web_search` | live grounding via Tavily when the ask needs facts | `tools.py` |
-| report | a typed `FdeReport`: verdict, model, findings with numbers, next steps | `studio_agent.py` |
+| report | a typed `FdeReport`: verdict, model, findings with numbers, next steps; plus deliverables derived from what was verified, not from prose: a copy-paste integration snippet for the partner's framework, a downloadable `INTEGRATION.md`, the TTFT budget check, and a cost estimate when `pricing.json` has prices | `studio_agent.py`, `studio.py` |
 | voice | the report's 60-word `spoken_summary`, synthesised by **Cartesia Sonic** and played in the page (browser speech if no key) | `voice.py` |
 | trace | the OpenTelemetry spans for the run, as a tree | `tracing.py` |
 

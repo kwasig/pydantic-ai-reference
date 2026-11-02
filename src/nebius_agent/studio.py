@@ -19,6 +19,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +31,7 @@ from pydantic import BaseModel
 
 from .config import Settings, get_settings
 from .provider import make_client
-from .studio_agent import SCENARIOS, build_studio_agent, build_studio_deps
+from .studio_agent import SCENARIOS, build_studio_agent, build_studio_deps, integration_snippet
 from .tracing import memory_spans
 from .voice import synthesize
 
@@ -38,10 +39,21 @@ STATIC = Path(__file__).parent / "static"
 AUDIO_DIR = Path(os.getenv("STUDIO_AUDIO_DIR", "audio"))
 
 
+class Intake(BaseModel):
+    """What the partner tells us. The prompt is composed from it on the client; we keep it for the README."""
+
+    workload: str | None = None
+    framework: str | None = None  # pydantic_ai | langgraph | openai_sdk
+    budget_ms: int | None = None
+    monthly_tokens_m: float | None = None
+    partner: str | None = None
+
+
 class StartRun(BaseModel):
     prompt: str | None = None
     scenario: str | None = None
     model: str | None = None
+    intake: Intake | None = None
 
 
 @dataclass
@@ -49,6 +61,7 @@ class Run:
     id: str
     prompt: str
     model: str
+    intake: dict[str, Any] = field(default_factory=dict)
     started: float = field(default_factory=time.time)
     status: str = "running"  # running | done | error
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -121,6 +134,16 @@ async def _execute(run: Run, settings: Settings) -> None:
             "output_tokens": u.output_tokens,
             "cache_read_tokens": getattr(u, "cache_read_tokens", 0) or 0,
         }
+        # deliverables derived deterministically from what was verified, not from the model's prose
+        verified = [p for p in report.get("probes", []) if p.get("tool_called")]
+        fw = run.intake.get("framework") or (_framework_key(verified[0]["framework"]) if verified else "pydantic_ai")
+        report["integration_snippet"] = integration_snippet(fw, report["recommended_model"], settings.base_url)
+        report["framework_key"] = fw
+        report["budget_ms"] = run.intake.get("budget_ms")
+        best = next((m for m in report.get("measurements", []) if m["model"] == report["recommended_model"]), None)
+        report["budget_met_measured"] = (best["ttft_ms"] <= run.intake["budget_ms"]) if (best and run.intake.get("budget_ms")) else None
+        report["cost"] = _cost_estimate(report["recommended_model"], run.intake.get("monthly_tokens_m"))
+        report["readme_md"] = _partner_readme(run, report, settings)
         run.emit("report", {"report": report, "usage": run.usage})
         # speak the summary
         run.emit("voice", {"status": "start", "text": report["spoken_summary"]})
@@ -153,6 +176,106 @@ async def _execute(run: Run, settings: Settings) -> None:
         run.emit("trace", {"spans": run.spans, "count": len(run.spans)})
         run.emit("run_end", {"status": run.status, "elapsed_s": round(time.time() - run.started, 2)})
         await deps.http.aclose()
+
+
+def _framework_key(label: str) -> str:
+    low = label.lower()
+    if "langgraph" in low:
+        return "langgraph"
+    if "openai" in low:
+        return "openai_sdk"
+    return "pydantic_ai"
+
+
+def load_pricing() -> dict[str, dict[str, float]]:
+    """Optional per-model prices, USD per 1M tokens: pricing.json next to the repo root or PRICING_FILE.
+    Empty by default on purpose: fill it from your account's pricing page; we never invent prices."""
+    path = Path(os.getenv("PRICING_FILE", "pricing.json"))
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {k: v for k, v in data.items() if isinstance(v, dict) and "input_per_m" in v and "output_per_m" in v}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _cost_estimate(model: str, monthly_tokens_m: float | None) -> dict[str, Any] | None:
+    prices = load_pricing().get(model)
+    if not prices or not monthly_tokens_m:
+        return None
+    # assume a 3:1 input:output split unless the partner tells us otherwise
+    inp, out = monthly_tokens_m * 0.75, monthly_tokens_m * 0.25
+    monthly = inp * prices["input_per_m"] + out * prices["output_per_m"]
+    return {
+        "monthly_usd": round(monthly, 2),
+        "input_per_m": prices["input_per_m"],
+        "output_per_m": prices["output_per_m"],
+        "assumed_split": "75% input / 25% output",
+        "monthly_tokens_m": monthly_tokens_m,
+    }
+
+
+def _partner_readme(run: "Run", r: dict[str, Any], s: Settings) -> str:
+    probes = (
+        "\n".join(
+            f"- {p['framework']} on {p['backend']}: {'tool call verified' if p['tool_called'] else 'NOT verified'} — {p['summary']}"
+            for p in r.get("probes", [])
+        )
+        or "- no probe run"
+    )
+    meas = (
+        "\n".join(
+            f"| {m['model']} | {m['ttft_ms']} | {m['tokens_per_s']} | {m['cached_prompt_tokens']} |" for m in r.get("measurements", [])
+        )
+        or "| – | – | – | – |"
+    )
+    conf = r.get("conformance")
+    conf_line = f"{conf['passed']} pass · {conf['partial']} partial · {conf['failed']} fail ({conf['notes']})" if conf else "not run"
+    budget = (
+        f"{r['budget_ms']} ms TTFT budget: {'met' if r.get('budget_met_measured') else 'not met on the shared endpoint' if r.get('budget_met_measured') is False else 'not measured'}"
+        if r.get("budget_ms")
+        else "no latency budget given"
+    )
+    cost = r.get("cost")
+    cost_line = (
+        f"≈ ${cost['monthly_usd']:,.0f} / month at {cost['monthly_tokens_m']}M tokens ({cost['assumed_split']})"
+        if cost
+        else "add prices to pricing.json for an estimate"
+    )
+    return f"""# {r["title"]}
+
+Generated by Nebius Integration Scout · {datetime.now(timezone.utc).strftime("%Y-%m-%d")} · endpoint {s.base_url}
+
+**Verdict:** {"integration verified" if r["integration_verified"] else "not verified"} · recommended model `{r["recommended_model"]}` · workload {r["workload"]} · {budget}
+
+## What was proven
+{probes}
+
+Conformance kit: {conf_line}
+
+## Measured on your prompt
+| model | TTFT ms | tokens/s | prefix-cache hit (tokens) |
+|---|---|---|---|
+{meas}
+
+## Findings
+{chr(10).join("- " + f for f in r["findings"])}
+
+## Next steps
+{chr(10).join("- " + f for f in r["next_steps"])}
+
+## Cost
+{cost_line}
+
+## Integration
+```python
+{r["integration_snippet"]}
+```
+
+## Your ask
+> {run.prompt}
+"""
 
 
 def _safe_json(v: Any) -> Any:
@@ -228,6 +351,11 @@ async def status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/pricing")
+async def pricing() -> dict[str, Any]:
+    return {"models": load_pricing(), "source": os.getenv("PRICING_FILE", "pricing.json")}
+
+
 @app.get("/api/models")
 async def models() -> dict[str, Any]:
     s: Settings = app.state.settings
@@ -249,7 +377,12 @@ async def start_run(req: StartRun) -> dict[str, str]:
         prompt = sc["prompt"]
     if not prompt:
         raise HTTPException(400, "prompt or scenario required")
-    run = Run(id=uuid.uuid4().hex[:10], prompt=prompt, model=req.model or s.model)
+    run = Run(
+        id=uuid.uuid4().hex[:10],
+        prompt=prompt,
+        model=req.model or s.model,
+        intake=req.intake.model_dump(exclude_none=True) if req.intake else {},
+    )
     RUNS[run.id] = run
     asyncio.create_task(_execute(run, s))
     return {"run_id": run.id}
