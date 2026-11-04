@@ -173,7 +173,12 @@ async def tool_call_emitted(client: AsyncOpenAI, model: str) -> CheckResult:
         msg = r.choices[0].message
         calls = msg.tool_calls or []
         if not calls:
-            return CheckResult("", FAIL, "no tool_calls in response", {"content": (msg.content or "")[:200]})
+            return CheckResult(
+                "",
+                FAIL,
+                f"no tool_calls with tool_choice=auto; model answered in text: {(msg.content or '')[:70]!r}" + _note(note),
+                {"content": (msg.content or "")[:200], "finish_reason": r.choices[0].finish_reason, **note},
+            )
         c = calls[0]
         try:
             args = json.loads(c.function.arguments or "{}")
@@ -374,12 +379,13 @@ async def streaming_text(client: AsyncOpenAI, model: str) -> CheckResult:
     async def go():
         a = await attempt(120)
         note = ""
-        if a["chunks"] == 0 and a["finish"] == "length":
-            # reasoning model spent the budget thinking: give it room and report that
+        if a["finish"] == "length" and (a["chunks"] == 0 or a["reasoning_chunks"]):
+            # reasoning model spent (most of) the budget thinking: give it room and report that
             b = await attempt(REASONING_RETRY_TOKENS)
             note = (
-                f"; reasoning model: max_tokens=120 was spent on {a['reasoning_chunks']} reasoning deltas (no content), "
-                f"passed at max_tokens={REASONING_RETRY_TOKENS} with {b['reasoning_chunks']} reasoning deltas before the first content delta"
+                f"; reasoning model: max_tokens=120 was spent on {a['reasoning_chunks']} reasoning deltas "
+                f"({a['chunks']} content chunks before the limit), "
+                f"retried at max_tokens={REASONING_RETRY_TOKENS}: {b['reasoning_chunks']} reasoning deltas before the first content delta"
             )
             a = b
         elif a["reasoning_chunks"]:
