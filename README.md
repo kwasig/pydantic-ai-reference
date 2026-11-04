@@ -48,6 +48,10 @@ make test                                        # 15 tests, starts its own mock
 
 ## 1b. Integration Scout: the Studio UI
 
+![Architecture: a PydanticAI orchestrator on Token Factory with six tools (probe, list_models, conformance, benchmark, dedicated, web_search) over Daytona, Token Factory, the control plane and Tavily; plan and Langfuse traces out](docs/img/architecture.png)
+
+The orchestrator never guesses: every claim in the plan comes from a tool result (a probe's `tool_called=true`, a check's status, a benchmark's numbers).
+
 ```bash
 make studio          # http://127.0.0.1:8090  (reads .env: NEBIUS_API_KEY, DAYTONA_API_KEY, CARTESIA_API_KEY, TAVILY_API_KEY)
 make studio-mock     # same UI against the mock + local sandbox, no keys
@@ -292,7 +296,7 @@ src/nebius_agent/   config.py provider.py tools.py agent.py tracing.py cli.py se
                     studio.py studio_agent.py sandbox.py voice.py probes/ static/   # the Studio
 src/conformance/    checks.py run.py            # framework-agnostic kit
 src/mock_server/    server.py                   # deterministic OpenAI-compatible fake
-tests/              15 tests through PydanticAI's abstractions + the kit + the service
+tests/              20 tests through PydanticAI's abstractions + the kit + the service
 examples/           partner_quickstart.py
 deploy/             k8s.yaml      Dockerfile    scripts/demo.sh
 docs/               ARCHITECTURE.md  PARTNER_PLAYBOOK.md  RECOMMENDATION.md

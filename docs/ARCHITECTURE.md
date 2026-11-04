@@ -1,5 +1,9 @@
 # Architecture
 
+![Integration Scout: orchestrator, six tools, four services](img/architecture.png)
+
+One agent, six tools, four outside services. The probe and the coding session run inside the Daytona sandbox and call Token Factory from there; the dedicated tool talks to the control plane, provisions, benchmarks on the new endpoint, and deletes it in a `finally`.
+
 ## The agent loop
 
 ```mermaid
