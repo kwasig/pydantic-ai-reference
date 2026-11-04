@@ -32,3 +32,39 @@ def test_example_from_schema_handles_refs_enums_and_arrays():
     assert ex["kind"] == "a" and ex["flag"] is True
     assert len(ex["items"]) == 2 and ex["items"][0] == {"n": 1}
     assert isinstance(ex["maybe"], str)
+
+
+class _FakeReasoningModel:
+    """A chat.completions stand-in that spends a small budget on reasoning and only answers with room to think."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+        class _Completions:
+            async def create(inner, **kw):  # noqa: N805
+                self.calls.append(kw)
+                from types import SimpleNamespace as NS
+
+                starved = kw["max_tokens"] < 100
+                msg = NS(content=None if starved else "ready", tool_calls=None, reasoning_content="thinking..." * 3, model_extra={})
+                usage = NS(
+                    prompt_tokens=12,
+                    completion_tokens=kw["max_tokens"] if starved else 240,
+                    completion_tokens_details=NS(reasoning_tokens=kw["max_tokens"] if starved else 231),
+                    model_dump=lambda: {},
+                )
+                return NS(choices=[NS(message=msg, finish_reason="length" if starved else "stop")], usage=usage)
+
+        self.chat = type("Chat", (), {"completions": _Completions()})()
+
+
+async def test_reasoning_model_is_reported_not_failed():
+    """Kimi-K3 spends max_tokens=20 on reasoning_content: the kit must retry with room and say so, not report FAIL."""
+    from conformance.checks import chat_basic
+
+    client = _FakeReasoningModel()
+    r = await chat_basic(client, "fake/reasoner")
+    assert r.status == PASS
+    assert [c["max_tokens"] for c in client.calls] == [20, 2000]
+    assert "reasoning model" in r.detail and "231 reasoning tokens" in r.detail
+    assert r.evidence["reasoning_model"] is True
